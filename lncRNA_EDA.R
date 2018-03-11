@@ -10,8 +10,6 @@ setwd('/Users/mijiarui/R_bioinformatics_project/Master_thesis_project/lncRNA_EDA
 # dir()
 
 
-
-
 # Load packages
 library('reshape2')
 library("DESeq2")
