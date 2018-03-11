@@ -1,3 +1,5 @@
+# RNA-seq analysis of zebrafish pancreatic cells from Bernard Peer's lab
+
 #=======================================================================================
 #
 #                     DESeq object creation and Normalization
