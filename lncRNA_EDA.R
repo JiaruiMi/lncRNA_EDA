@@ -549,28 +549,35 @@ ggcorrplot(pearson_cor, hc.order = T,lab = T)
 
 
 
-# Differential Gene Expression
+############### Differential Gene Expression #################
 sampleA <- 'beta'
-sampleB <- 'ductal'
+sampleB <- 'acinal'
 sampleC <- 'alpha'
 sampleD <- 'delta'
 sampleE <- 'ductal'
-## Differential gene expression between beta cell and acinal cell
+
+### Differential gene expression between sampleA and sampleB
+#### Comparison between sampleA and sampleB
 contrastV <- c('celltype', sampleA, sampleB)
 res <- results(dds, contrast = contrastV)
 head(res)
+
+#### Calculate the mean value of gene expression in sampleA 
 baseA <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleA]
-head(baseA)
 baseMeanA <- as.data.frame(rowMeans(baseA))
 colnames(baseMeanA) <- sampleA
-head(baseMeanA)
+
+#### Calculate the mean value of gene expression in sampleB 
 baseB <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleB]
 baseMeanB <- as.data.frame(rowMeans(baseB))
 colnames(baseMeanB) <- sampleB
-head(baseMeanB)
+
+#### Prepare the res table of differential gene expression between sampleA and sampleB
 res <- cbind(baseMeanA, baseMeanB, as.data.frame(res))
 ID <- rownames(res)
 res <- cbind(ID, as.data.frame(res))
+
+
 res$padj[is.na(res$padj)]<- 1
 res <- res[order(res$padj),]
 head(res)
