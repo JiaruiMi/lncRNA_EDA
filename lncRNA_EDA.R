@@ -576,35 +576,58 @@ colnames(baseMeanB) <- sampleB
 res <- cbind(baseMeanA, baseMeanB, as.data.frame(res))
 ID <- rownames(res)
 res <- cbind(ID, as.data.frame(res))
-
-
 res$padj[is.na(res$padj)]<- 1
 res <- res[order(res$padj),]
-head(res)
 res$significance <- (res$padj<0.05)
+
+#### Draw MA plot
 plotMA(res[,c(4,5,10)], main = "MAplot")
+
+#### Save the comparison results
 com <- paste(sampleA,'_vs_', sampleB)
 file_base <- paste('DESeq2',com,sep = '.')
 write.table(as.data.frame(res),file = file_base,quote = F, row.names = F)
-# Extract differential expressed gene
+
+
+#### Extract differential expressed gene
 res_de <- subset(res, res$padj<0.1, select=c('ID',sampleA,sampleB,'log2FoldChange','padj'))
 res_de_up <- subset(res_de,res_de$log2FoldChange>=1)
 res_de_down <- subset(res_de,res_de$log2FoldChange<=-1)
-# Volcano plot
+
+
+### Volcano plot
+#### Just a volcano plot
 logFC <- res$log2FoldChange
 FDR <- res$padj
 head(res)
 plot(logFC,log10(FDR)*(-1),col = ifelse(FDR<=0.01, ifelse(abs(logFC)>=1, 'red', 'black'), 'black'), xlab = 'logFC', ylab = '-1*log10(FDR)', main = "Volcano plot", pch = '.', ylim=c(1,100))
-ggplot(data = res, aes(x=log2FoldChange, y = -log10(padj), color = significance)) +
+
+#### Volcano plot showing upregulated and downregulated genes
+res$change <- as.factor(ifelse(res$padj < 0.05 & abs(res$log2FoldChange) > 2, 
+                               ifelse(res$log2FoldChange > 1, 'UP', 'DOWN'), 'NOT'))
+
+##### Use biomaRt to convert gene ID of differential expressed genes with very significant p-value
+mart <- useMart('ensembl')
+ensembl <- useDataset('drerio_gene_ensembl', mart)
+listFilters(ensembl)
+signifiant_genes <- getBM(attribute=c('ensembl_gene_id', 'entrezgene','zfin_id_symbol'),filters = 'ensembl_gene_id', values= row.names(subset(res, -log10(padj) > 100)),mart = ensembl)
+
+##### Plot VolcanoPlot
+this_title <- paste('Cutoff for logFC is 1', '\nThe number of upregulated genes is', nrow(res[res$change == 'UP',]),
+                     '\nThe number of downregulated gene is', nrow(res[res$change == 'DOWN',]))
+ggplot(data = res, aes(x=log2FoldChange, y = -log10(padj), color = change, alpha = 0.5)) +
   geom_point()+
-  scale_color_manual(values = c('black','red'))+
-  geom_hline(yintercept = -log10(0.05),lty=4, lwd=0.6,alpha=0.6)+
-  geom_vline(xintercept = c(-1,1),lty=4, lwd=0.6,alpha=0.6)+
+  scale_color_manual(values = c('blue','black', 'red')) +
+  geom_hline(yintercept = -log10(0.05),lty=4, lwd=0.6,alpha=0.5)+
+  geom_vline(xintercept = c(-1,1),lty=4, lwd=0.6,alpha=0.5)+
   theme_bw()+
   theme(panel.border = element_blank(),panel.grid.major = element_blank(), panel.grid.minor = element_blank(), axis.line = element_line(colour = 'black'))+
-  labs(title="Volcanoplot: beta_vs_acinal", x= 'log2(fold change)', y = '-log10(padj)')+
+  labs(title= this_title, x= 'log2(fold change)', y = '-log10(padj)')+
   theme(plot.title = element_text(hjust = 0.5))+
-  geom_text_repel(data=subset(res, -log10(padj) > 100), aes(label=ID), col= 'black', alpha = 0.8)
+  geom_text_repel(data=subset(res, -log10(padj) > 100), aes(label=signifiant_genes$zfin_id_symbol), col= 'black')
+
+
+
 # Heatmap of beta cell and acinal cell
 res_de_up_top50_id <- as.vector(head(res_de_up$ID,50))
 res_de_down_top50_id <- as.vector(head(res_de_down$ID,50))
