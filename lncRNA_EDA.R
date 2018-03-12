@@ -547,8 +547,6 @@ ggcorrplot(pearson_cor, hc.order = T,lab = T)
 
 
 
-
-
 ############### Differential Gene Expression #################
 sampleA <- 'beta'
 sampleB <- 'acinal'
@@ -613,7 +611,7 @@ listFilters(ensembl)
 signifiant_genes <- getBM(attribute=c('ensembl_gene_id', 'entrezgene','zfin_id_symbol'),filters = 'ensembl_gene_id', values= row.names(subset(res, -log10(padj) > 100)),mart = ensembl)
 
 ##### Plot VolcanoPlot
-this_title <- paste('Cutoff for logFC is 1', '\nThe number of upregulated genes is', nrow(res[res$change == 'UP',]),
+this_title <- paste('VolcanoPlot of',sampleA, 'vs', sampleB,'\nCutoff for logFC is 1', '\nThe number of upregulated genes is', nrow(res[res$change == 'UP',]),
                      '\nThe number of downregulated gene is', nrow(res[res$change == 'DOWN',]))
 ggplot(data = res, aes(x=log2FoldChange, y = -log10(padj), color = change, alpha = 0.5)) +
   geom_point()+
@@ -628,13 +626,16 @@ ggplot(data = res, aes(x=log2FoldChange, y = -log10(padj), color = change, alpha
 
 
 
-# Heatmap of beta cell and acinal cell
-res_de_up_top50_id <- as.vector(head(res_de_up$ID,50))
-res_de_down_top50_id <- as.vector(head(res_de_down$ID,50))
-res_de_top100 <- c(res_de_up_top50_id,res_de_down_top50_id)
-res_de_top100_expr <- normalized_counts[rownames(normalized_counts) %in% res_de_top100,c(2:6,1,16:20)]
-head(res_de_top100_expr)
-pheatmap(res_de_top100_expr,cluster_rows = T, scale = 'row',annotation_col = sample)
+#### Heatmap of beta cell and acinal cell
+res_de_up_top25_id <- as.vector(head(res_de_up$ID,25))
+res_de_down_top25_id <- as.vector(head(res_de_down$ID,25))
+res_de_top50 <- c(res_de_up_top25_id,res_de_down_top25_id)
+res_de_top50_expr <- normalized_counts[rownames(normalized_counts) %in% res_de_top50,c(2:6,1,16:20)]
+##### Still need to do ID conversion
+zfin_gene_symbol <- getBM(attribute=c('ensembl_gene_id', 'entrezgene','zfin_id_symbol'),
+                          filters = 'ensembl_gene_id', values= row.names(res_de_top50_expr),mart = ensembl)
+row.names(res_de_top50_expr) <- zfin_gene_symbol$zfin_id_symbol
+pheatmap(res_de_top50_expr,cluster_rows = T, scale = 'row',annotation_col = sample)
 
 
 
