@@ -447,6 +447,7 @@ TSNEPlot(object = seuset, do.label = T, pt.size = 5)
 #
 #==================================================================================
 
+############# Continue performing normalizaton #################
 ## Sort according to mad
 normalized_counts_mad <- apply(normalized_counts, 1, mad)
 normalized_counts < normalized_counts[order(normalized_counts_mad, decreasing = T),]
@@ -463,7 +464,7 @@ exprSet_L <- melt(data = exprSet_L, id.vars = 'exprSet_L')
 exprSet_L$group <- rep(group_List, each = nrow(rlogMat))
 
 
-############# Sequencing depth investigation #############
+############# Sequencing depth investigation -- After Normalization and log transformation #############
 ### Load the package
 library(ggplot2)
 #### boxplot
@@ -491,49 +492,63 @@ p <- ggplot(exprSet_L, aes(value, col = group))+geom_density()
 p
 
 
+############# Hierarchical Clustering and PCA ###############
 
-
-## Hierarchical Clustering and PCA ##
+## Hierarchical clustering
 ### Selecting colors
 display.brewer.all(type = 'all') 
 hmcol <- colorRampPalette(brewer.pal(9, "GnBu"))(100)
 ### Calculating the pearson correlation matrix
+#### Clustering is based on the relationship among each individual sample. Both distance and correlation
+#### are accepted but correlation is preferred. The distance methods and correlation methods are chosen 
+#### based on your data.
 pearson_cor <- as.matrix(cor(rlogMat, method = 'pearson'))
 head(pearson_cor); dim(pearson_cor)
 hc <- hcluster(t(rlogMat), method="pearson")
+#### Here I use 'heatmap.2' function from 'gplots' package.
 heatmap.2(pearson_cor, Rowv = as.dendrogram(hc), trace = 'none',symm = T, col = hmcol, main = 'The pearson correlation of each')
+
+## Principal Component Analysis -- PCA
 ### How to examine the loading scores to determine what variables have the largest effect on the graph
 ### Prcomp will give us three things: x, sdev, rotation
 ### x contains the prcincipal component for drawing a graph
 ### The prcomp() function calls the loading scores rotation, there are loading scores for each PC
 pca <- prcomp(t(rlogMat), scale. = T)   # remember to transpose the matrix
 plot(pca$x[,1],pca$x[,2])
-ggbiplot(pca ,choices = 1:2, obs.scale = T,labels = NULL, var.scale = T,groups = sample$celltype, ellipse = T, circle = T, var.axes = F, alpha = 0.6)+theme(legend.direction = 'horizontal', legend.position = 'top')+theme_bw()
-# loadings for PC1
+ggbiplot(pca ,choices = 1:2, obs.scale = T,labels = NULL, var.scale = T,groups = sample$celltype, ellipse = T, circle = T, var.axes = F, alpha = 0.5)+
+  theme(legend.direction = 'horizontal', legend.position = 'top')+theme_bw()
+### loadings for PC1, sorting based on the contribution from large to small
+pca$rotation; dim(pca$rotation)  ## have a look at the loading scores of each principal component
 loading_score1 <- pca$rotation[,1]
-head(loading_score1)
 gene_score1 <- abs(loading_score1)
 gene_score_ranked1 <- sort(gene_score1, decreasing = T)
 top_25_genes1 <- names(gene_score_ranked1[1:25])
-top_25_genes1
 pca$rotation[top_25_genes1,1]
-# loadings for PC2
+### loadings for PC2, sorting based on the contribution from large to small
 loading_score2 <- pca$rotation[,2]
-head(loading_score2)
 gene_score2 <- abs(loading_score2)
 gene_score_ranked2 <- sort(gene_score2, decreasing = T)
 top_25_genes2 <- names(gene_score_ranked2[1:25])
 top_25_genes2
-pca$rotation[top_25_genes2,1]
-# Using plotPCA 
+pca$rotation[top_25_genes2,2]
+
+
+### Using plotPCA from DESeq2 package
+#### Use top 5000 genes (selected variable genes to do PCA is better)
 pca_data <- plotPCA(rld, intgroup = c('celltype'), returnData = T, ntop = 5000)    # loading for each principal component (compared with novel analysis with the same important loadings with novel transcripts)
 percentVar <- round(100 * attr(pca_data, "percentVar"))
 p <- ggplot(pca_data, aes(PC1, PC2, color=celltype))
 p + geom_point(size=3) +
   xlab(paste0("PC1: ", percentVar[1], "% variance")) +
   ylab(paste0("PC2: ", percentVar[2], "% variance"))
+#### Without gene selection step, the PCA plot seems not be able to distinguish among endocrine cells
 plotPCA(rld, intgroup=c("celltype"))
 ggcorrplot(pearson_cor, hc.order = T,lab = T)     
+
+
+
+
+
 # Differential Gene Expression
 sampleA <- 'beta'
 sampleB <- 'ductal'
