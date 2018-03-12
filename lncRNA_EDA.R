@@ -639,55 +639,53 @@ pheatmap(res_de_top50_expr,cluster_rows = T, scale = 'row',annotation_col = samp
 
 
 
-# Use biomaRt to concert gene ID (for enrichment analysis, entrezid should be used)
-head(listMarts())
+
+######### Enrichment analysis based on Differential gene expression analysis between two cell types #########
+## Use biomaRt to concert gene ID (for enrichment analysis, entrezid should be used)
 mart <- useMart('ensembl')
-View(listDatasets(mart))  # select dataset "drerio_gene_ensembl"
+### select dataset "drerio_gene_ensembl"
 ensembl <- useDataset('drerio_gene_ensembl', mart)
-## beta higher than acinal
-entrezid_beta_higherthan_acinal<- getBM(attribute=c('ensembl_gene_id', 'entrezgene'),filters = 'ensembl_gene_id', values= row.names(res_de_up),mart = ensembl)
-head(entrezid_beta_higherthan_acinal)
-dim(entrezid_beta_higherthan_acinal)
-entrezid_beta_higherthan_acinal <- entrezid_beta_higherthan_acinal[is.na(entrezid_beta_higherthan_acinal$entrezgene) != T,]
-summary(entrezid_beta_higherthan_acinal)
-dim(res_de)
-head(res_de)
-geneList_foldchange_beta_higherthan_acinal <- res_de[res_de$ID %in% entrezid_beta_higherthan_acinal$ensembl_gene_id,c('ID','log2FoldChange')]
-head(geneList_foldchange_beta_higherthan_acinal)
-entrezid_beta_higherthan_acinal <- unique(entrezid_beta_higherthan_acinal$entrezgene)
-### Biological Process
-BP <- enrichGO(entrezid_beta_higherthan_acinal,'org.Dr.eg.db',pvalueCutoff = 0.05,pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'BP', readable = readable)
+### beta_vs_acinal
+entrezid_beta_vs_acinal<- getBM(attribute=c('ensembl_gene_id', 'entrezgene'),
+                                filters = 'ensembl_gene_id', values= row.names(res_de),mart = ensembl)
+entrezid_beta_vs_acinal <- entrezid_beta_vs_acinal[!is.na(entrezid_beta_vs_acinal$entrezgene),]
+geneList_foldchange_beta_vs_acinal <- res_de[res_de$ID %in% entrezid_beta_vs_acinal$ensembl_gene_id,c('ID','log2FoldChange')]
+head(geneList_foldchange_beta_vs_acinal)
+#### The input for enrichment analysis is entrezgene id 
+entrezid_beta_vs_acinal <- unique(entrezid_beta_vs_acinal$entrezgene)
+
+#### Biological Process
+BP <- enrichGO(entrezid_beta_vs_acinal,'org.Dr.eg.db',pvalueCutoff = 0.05,pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'BP', readable = readable)
 result_BP <- simplify(BP,cutoff = 0.7, by = 'p.adjust', select_fun = min)
-head(result_BP)
-?dotplot
 dotplot(result_BP,showCategory = 10)+scale_size(range = c(2,15))+ggplot2::xlim(NA, 0.04)+scale_color_continuous(low = 'purple', high = 'green')  # Use scale_size to change the size of the bubble, if the bubble is too large and be cut by the edge, you can used xlim to extend the x axis
 dotplot(result_BP,showCategory = 10,x = 'count')+scale_size(range = c(2,12))+xlim(NA,120)
-barplot(result_BP,drop = T, showCategory = 10)+scale_x_discrete(labels = function(x) str_wrap(x, width = 25))
+barplot(result_BP,drop = T, showCategory = 10)+scale_x_discrete(labels = function(x)str_wrap(x, width = 25))
 barplot(result_BP,x = 'count', showCategory = 10)
 plotGOgraph(result_BP)
-### Molecular Function
-MF <- enrichGO(entrezid_beta_higherthan_acinal,'org.Dr.eg.db',pvalueCutoff = 0.05,pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'MF', readable = readable)
+goplot(result_BP)
+#### Molecular Function
+MF <- enrichGO(entrezid_beta_vs_acinal,'org.Dr.eg.db',pvalueCutoff = 0.05,pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'MF', readable = readable)
 result_MF <- simplify(MF,cutoff = 0.7, by = 'p.adjust', select_fun = min)
 dotplot(result_BP,showCategory = 10)+scale_size(range = c(2,15))+ggplot2::xlim(NA, 0.04)+scale_color_continuous(low = 'purple', high = 'green') 
-barplot(result_MF,drop = T, showCategory = 10)+scale_x_discrete(labels = function(x) str_wrap(x, width = 25))
-head(result_MF)
+barplot(result_MF,drop = T, showCategory = 10)
 plotGOgraph(result_MF)
-### Cellular Component
-CC <- enrichGO(entrezid_beta_higherthan_acinal,'org.Dr.eg.db',pvalueCutoff = 0.05,pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'CC', readable = readable)
+goplot(result_MF)
+#### Cellular Component
+CC <- enrichGO(entrezid_beta_vs_acinal,'org.Dr.eg.db',pvalueCutoff = 0.05,pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'CC', readable = readable)
 result_CC <- simplify(CC,cutoff = 0.7, by = 'p.adjust', select_fun = min)
 dotplot(result_CC,showCategory = 10)+scale_size(range = c(2,15))+ggplot2::xlim(NA, 0.045)+scale_color_continuous(low = 'purple', high = 'green') 
-barplot(result_CC,drop = T, showCategory = 10)+scale_x_discrete(labels = function(x) str_wrap(x, width = 25))
-head(result_CC)
+barplot(result_CC,drop = T, showCategory = 10)
 plotGOgraph(result_CC)
-### KEGG pathway
-kk <- enrichKEGG(entrezid_beta_higherthan_acinal,organism = 'dre',keyType = 'kegg',pvalueCutoff = 0.05,pAdjustMethod = 'BH',qvalueCutoff = 0.2)
+goplot(result_CC)
+#### KEGG pathway
+kk <- enrichKEGG(entrezid_beta_vs_acinal,organism = 'dre',keyType = 'kegg',pvalueCutoff = 0.05,pAdjustMethod = 'BH',qvalueCutoff = 0.2)
 result_kk <- setReadable(kk,'org.Dr.eg.db',keytype = 'ENTREZID')
-head(result_kk)
 dotplot(result_kk)+scale_size(range = c(2,15))+ggplot2::xlim(NA,0.09)
 cnetplot(result_kk,categorySize = 'aa$geneNum', showCategory = 3)
-?cnetplot
-result_kk$Description
-head(geneList_foldchange_beta_higherthan_acinal)
+
+
+
+
 # To get the pathway image: pv.out <- pathview(gene.data = geneList_foldchange_beta_higherthan_acinal$log2FoldChange,pathway.id = result_kk$ID, species = 'dre', kegg.native = T)
 ## Preparation of geneList for GSEA analysis
 entrezid_DGE_beta_with_acinal<- getBM(attribute=c('ensembl_gene_id', 'entrezgene'),filters = 'ensembl_gene_id', values= row.names(res_de),mart = ensembl)
