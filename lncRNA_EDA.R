@@ -618,7 +618,7 @@ ggplot(data = res, aes(x=log2FoldChange, y = -log10(padj), color = change, alpha
   scale_color_manual(values = c('blue','black', 'red')) +
   geom_hline(yintercept = -log10(0.05),lty=4, lwd=0.6,alpha=0.5)+
   geom_vline(xintercept = c(-1,1),lty=4, lwd=0.6,alpha=0.5)+
-  theme_bw()+
+  theme_bw(base_size = 10)+
   theme(panel.border = element_blank(),panel.grid.major = element_blank(), panel.grid.minor = element_blank(), axis.line = element_line(colour = 'black'))+
   labs(title= this_title, x= 'log2(fold change)', y = '-log10(padj)')+
   theme(plot.title = element_text(hjust = 0.5))+
