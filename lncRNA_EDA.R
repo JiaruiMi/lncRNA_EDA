@@ -462,7 +462,11 @@ exprSet_L <- row.names(rlogMat)
 exprSet_L <- cbind(exprSet_L, as.data.frame(rlogMat)) # Must convert normalized_count into data.frame before cbind
 exprSet_L <- melt(data = exprSet_L, id.vars = 'exprSet_L')
 exprSet_L$group <- rep(group_List, each = nrow(rlogMat))
+
+
 ############# Sequencing depth investigation #############
+### Load the package
+library(ggplot2)
 #### boxplot
 p <- ggplot(data = exprSet_L, aes(x = variable, y = value, fill = group))+ geom_boxplot()
 print(p)
@@ -778,7 +782,7 @@ length(beta_vs_alpha_delta_markerGenes); class(beta_vs_alpha_delta_markerGenes)
 ### Using 'clusterprofiler', 'DOSE', 'enrichplot' packages to do enrichment analysis
 #### GO DAG graph (有向无环图) -- clusterprofiler, enrichplot
 ego_beta <- enrichGO(beta_vs_alpha_delta_markerGenes, OrgDb = 'org.Dr.eg.db', ont = 'BP', readable = T)
-
+goplot(ego_beta)
 #### Barplot
 barplot(ego_beta, showCategory = 20)
 #### Dotplot
