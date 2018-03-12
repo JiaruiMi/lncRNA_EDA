@@ -6,10 +6,10 @@
 #
 #=======================================================================================
 
-# Set working directory
+## Set working directory
 setwd('/Users/mijiarui/R_bioinformatics_project/Master_thesis_project/lncRNA_EDA')
-# getwd()
-# dir()
+### getwd()
+### dir()
 
 
 # Load packages
@@ -25,7 +25,6 @@ library('pheatmap')
 library("ggbiplot")
 library("ggrepel")
 library("devtools")
-library("stringr")
 
 ## packages for enrichment analysis
 library("org.Dr.eg.db")
