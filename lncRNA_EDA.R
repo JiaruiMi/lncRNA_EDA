@@ -17,7 +17,7 @@ library('reshape2')
 library("DESeq2")
 library("RColorBrewer")
 library("gplots")
-library("amap")
+library("amap") ## 'hcluster' function
 library("ggplot2")
 library("ggcorrplot")
 library("biomaRt")
@@ -452,7 +452,7 @@ TSNEPlot(object = seuset, do.label = T, pt.size = 5)
 normalized_counts_mad <- apply(normalized_counts, 1, mad)
 normalized_counts < normalized_counts[order(normalized_counts_mad, decreasing = T),]
 ## Log transformation
-rld <- rlog(dds, blind = F) # This step takes some time
+rld <- rlog(dds, blind = F) # This step takes some time, we do not put '+1' here
 rlogMat <- assay(rld)
 rlogMat <- rlogMat[order(normalized_counts_mad, decreasing = T),]
 
