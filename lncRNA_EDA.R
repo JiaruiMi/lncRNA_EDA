@@ -33,6 +33,7 @@ library("DOSE")
 library("clusterProfiler")
 library("enrichplot")
 library("BiocParallel")
+library("stringr")
 # library("pathview")
 library("topGO")
 library("ReactomePA")
@@ -869,4 +870,450 @@ beta_houseKeeping <- getBM(attributes = 'entrezgene', filters = 'go', values = e
 beta_vs_alpha_delta_markerGenes <- beta_vs_alpha_delta_markerGenes[!beta_vs_alpha_delta_markerGenes %in% beta_houseKeeping$entrezgene]
 
 
+#========================================================================================================
+#
+#                                         WGCNA for known genes
+#
+#========================================================================================================
+library(WGCNA)
+norm_counts <- normalized_counts[,1:20]
+datExpr0 <- as.data.frame(t(norm_counts)); dim(datExpr0)
 
+gsg <- goodSamplesGenes(datExpr0, verbose = 3)
+gsg$allOK
+
+if (!gsg$allOK)
+{
+  # Optionally, print the gene and sample names that were removed:
+  if (sum(!gsg$goodGenes)>0)
+    printFlush(paste("Removing genes:", paste(names(datExpr0)[!gsg$goodGenes], collapse = ',')))
+  if (sum(!gsg$goodSamples)>0)
+    printFlush(paste("Remove samples:", paste(rownames(datExpr0)[!gsg$goodSamples], collapse = ',')))
+  # Remove the offending genes and samples from the data:
+  datExpr0 = datExpr0[gsg$goodSamples, gsg$goodGenes]
+}
+
+head(datExpr0); dim(datExpr0)
+n <- nrow(datExpr0); n
+datExpr0[n+1,] <- apply(datExpr0[c(1:n),],2, function(x){log2(mean(x)+1)}); dim(datExpr0)
+datExpr0[n+2,] <- apply(datExpr0[c(1:n),], 2, function(x){log2(sd(x)/mean(x)+1)}) ; dim(datExpr0)# 使用变异系数（coefficient of variance, CV)较正表达量高低对变异度的影响
+datExpr1 <- as.data.frame(t(datExpr0))
+names(datExpr1)[21] <- 'log2_mean';names(datExpr1)[22] <- 'log2_CV'; names(datExpr1)
+head(datExpr1)[21]; head(datExpr1[22]); colnames(datExpr1)
+summary(datExpr1)
+
+p <- ggplot(datExpr1, aes(x = log2_mean, y = log2_CV))+ geom_point() + 
+  geom_smooth(span = 0.8, method = 'loess', na.rm = T) + 
+  geom_smooth(method = lm, col = 'red', na.rm = T) + 
+  ylim(c(0,10)) +
+  xlim(0,10) +
+  geom_vline(xintercept = c(0,0.1), col = 'darkgreen', lty = 2) +
+  theme_classic();  p
+
+model_xlog2mean_ylog2CV <- loess(datExpr1$log2_CV ~ datExpr1$log2_mean, span = 0.8, method = 'loess')
+prediction <- predict(object = model_xlog2mean_ylog2CV, data.frame(datExpr1$log2_mean), se = T)
+datExpr0 <- datExpr1[datExpr1$log2_CV > prediction$fit & datExpr1$log2_mean > 2,1:20]; dim(datExpr0) 
+
+
+
+filtered_TPM_normalized_counts <- datExpr0
+head(filtered_TPM_normalized_counts)
+dim(filtered_TPM_normalized_counts)
+
+
+library('gplots')
+library('pheatmap')
+library('amap')
+library('RColorBrewer')
+pearson_cor <- as.matrix(cor(x = datExpr0, method = 'pearson'))
+head(pearson_cor); dim(pearson_cor)
+hc <- hcluster(t(datExpr0), method="pearson")
+hmcol <- colorRampPalette(brewer.pal(9, "GnBu"))(100)
+heatmap.2(pearson_cor, Rowv = as.dendrogram(hc), trace = 'none',symm = T, col = hmcol, main = 'The pearson correlation of each')
+pheatmap(pearson_cor)
+
+
+
+sampleTree <- hclust(dist(t(datExpr0)), method = 'average')
+par(mfrow = c(1,1))
+plot(sampleTree, main = "Sample clustering to detect outlier")
+
+###### load trait data ######
+traitData <- read.csv(file = 'trait_D.csv', header = T, row.names = 1, check.names = F)
+head(traitData)
+## convert traits to a color representation: white means low, red means high, grey means missing entry
+traitColors <- numbers2colors(traitData, signed = F); traitColors;names(traitData)
+plotDendroAndColors(sampleTree, traitColors, groupLabels = names(traitData), main = 'Sample dendrogram and trait heatmap')
+
+
+################ STEP 2: Network Construction #############
+######## Select the best soft-thresholding power #########
+## Choose a set of soft-thresholding powers
+powers <- c(1:30)
+## Call the Network Topological Analysis function
+sft <- pickSoftThreshold(t(datExpr0), powerVector = powers, verbose = 5)  # This step takes some time.
+par(mfrow = c(1,2), mar = c(6.5,8,3,3))
+cex1 = 0.9
+str(sft)  
+# The output of 'sft' is a list object. powerEstimate is the estimated best power
+# The second output of 'sft' is fitIndices, which is a matrix. The fifth column, 'mean.k' denote average connectivity.
+
+## Scale-free topological fit index as a function of the soft-thresholding power
+plot(sft$fitIndices[,1], -sign(sft$fitIndices[,3]*sft$fitIndices[,2]), xlab = 'Soft Threshold (power)', 
+     ylab = 'Scale free Topological Model Fit, signed R^2', type = 'n', main = paste('Scale independence'))
+text(sft$fitIndices[,1], -sign(sft$fitIndices[,3]*sft$fitIndices[,2]), labels = powers, cex = cex1, col = 'red')
+abline(h = 0.9, col = 'blue') 
+# The blue line corresponds to using a R^2 cut-off of h
+plot(sft$fitIndices[,1], sft$fitIndices[,5], xlab = 'Soft Threshold (power)', ylab = 'Mean Connectivity', type = 'n', main = paste('Mean Connectivity'))
+text(sft$fitIndices[,1], sft$fitIndices[,5],labels = powers, cex = cex1, col = 'red')
+## Choose the softPower
+softPower <- sft$powerEstimate
+softPower
+Adjacency <- adjacency(t(datExpr0), power = softPower)
+## Turn adjacency matrix into Topological matrix, this step takes some time ##
+TOM <- TOMsimilarity(Adjacency)  
+dissTOM <- 1-TOM
+## Call the hierarchincal clustering function
+geneTree <- hclust(as.dist(dissTOM), method = 'average')   # This step takes some time, to calculate the distance in gene pairs.
+par(mfrow = c(1,1))
+plot(geneTree, xlab = '', sub = '', main = 'Gene clustering on TOM-based dissimilarity', labels = F, hang = 0.04)
+# We like large modules, so we set the minimum module size relatively high
+minModuleSize <- 300
+# set cutHeight, otherwise the function will set a cutHeight automatically
+# The next step may take some time
+dynamicMods <- cutreeDynamic(dendro = geneTree, distM = dissTOM, deepSplit = 2, pamRespectsDendro = F, minClusterSize = minModuleSize)
+table(dynamicMods)
+## Convert numeric labels into colors
+dynamicColors <- labels2colors(dynamicMods)
+table(dynamicColors)
+plotDendroAndColors(geneTree, dynamicColors,'Dynamic Tree Cut', dendroLabels = F, 
+                    hang = 0.03, addGuide = T, guideHang = 0.05, main = 'Gene dendrogram and module colors')
+
+
+## Calculate eigengene
+MEList <- moduleEigengenes(t(datExpr0), dynamicColors)
+MEs <- MEList$eigengenes
+MEDiss <- 1-cor(MEs)
+METree <- hclust(as.dist(MEDiss), method = 'average')
+par(mfrow = c(1,1))
+plot(METree, main = 'Clustering of module eigengene', xlab = '', sub = '')
+MEDissThres = 0.3 # set the threshold to make some branches together
+abline(h = MEDissThres, col = 'red')
+Merge <- mergeCloseModules(t(datExpr0), dynamicColors, cutHeight = MEDissThres, verbose = 3)
+mergedColors <- Merge$colors
+table(mergedColors)
+mergedMEs <- Merge$newMEs
+plotDendroAndColors(geneTree, cbind(dynamicColors, mergedColors), c('Dynamic Tree Cut', 'Merged dynamic'), 
+                    dendroLabels = F, hang = 0.03, addGuide = T, guideHang = 0.05) # It takes time!!!
+## Rename to module Colors
+moduleColors <- mergedColors
+colorOrder <- c('grey', standardColors(50))
+moduleLabels <- match(moduleColors, colorOrder)-1
+moduleLabels
+MEs <- mergedMEs
+
+
+
+nGene <- ncol(t(datExpr0))
+nSample <- nrow(t(datExpr0))
+moduleTraitCor <- cor(MEs, traitData, use = 'p')
+moduleTraitPvalue <- corPvalueStudent(moduleTraitCor, nSample)
+textMatrix = paste(signif(moduleTraitCor,2),"\n(", signif(moduleTraitPvalue,1),")", sep = "")
+dim(textMatrix) <- dim(moduleTraitCor)
+par(mfrow = c(1,1))
+par(mar = c(6,10,3,3))
+labeledHeatmap(Matrix = moduleTraitCor,
+               xLabels = names(traitData),
+               yLabels = names(MEs),
+               ySymbols = names(MEs),
+               colorLabels = F,
+               colors = blueWhiteRed(50),
+               textMatrix = textMatrix,
+               setStdMargins = F,
+               cex.text = 0.5,
+               zlim <- c(-1,1),
+               main = paste('Module-trait relationships'))
+
+
+
+nSelect <- 400
+set.seed(10)
+select <- sample(nGene, size = nSelect)
+selectTOM <- dissTOM[select, select]
+selectTree <- hclust(as.dist(selectTOM), method = 'average')
+selectColors <- moduleColors[select]
+plotDiss <- selectTOM^8
+diag(plotDiss) <- NA
+TOMplot(plotDiss, selectTree, selectColors, main = 'Network heatmap plot, select genes')
+
+###################### Visualizing the gene network of eigengene ###################
+par(cex = 0.9)
+plotEigengeneNetworks(MEs, "", marDendro = c(0,4,1,2), marHeatmap = c(3,4,1,2), cex.lab = 0.8)
+
+##################### Module membership (MM) and Gene significance ######################
+# Gene Significance, GS: 基因显著性参数，为非负数字信息，比如基于样本的临床信息(clinical traits)和基于每个基因的-log(p-value)等
+# names (colors) of each module
+modNames <- substring(names(MEs),3)
+modNames
+# 首先计算模块与基因的相关性矩阵
+# MEs表示每个模块在样本里的值
+geneModuleMembership <- as.data.frame(cor(t(datExpr0), MEs, use = 'p'))
+MMPvalue = as.data.frame(corPvalueStudent(as.matrix(geneModuleMembership),nSample))
+head(MMPvalue)
+names(MMPvalue) <- paste("p.MM", modNames, sep = "")
+# names of those traits
+traitNames <- names(traitData)
+geneTraitSignificance <- as.data.frame(cor(t(datExpr0), traitData, use = 'p'))
+head(geneTraitSignificance)
+GSPvalue <- as.data.frame(corPvalueStudent(as.matrix(geneTraitSignificance), nSample))
+head(GSPvalue)
+names(geneTraitSignificance) <- paste('GS.',traitNames,sep = "")
+names(GSPvalue) <- paste("p.GS.", traitNames, sep = "")
+
+
+# 也可以指定感兴趣的模块进行分析，每一个module都分配了一个color
+# 比如对module = 'greenyellow’ 的模块进行分析
+# 'green' module gene
+module <- c('greenyellow')
+column <- match(module, modNames)
+moduleGenes <- moduleColors == module
+head(moduleGenes)
+head(moduleColors)
+test_module_index <- which(moduleColors == module) # the index of genes which belong to 'blue' module
+length(colnames(datExpr0)[test_module_index])
+length(rownames(filtered_TPM_normalized_counts)[test_module_index])
+# 注意datExpr0和filtered_normalized_counts是转置的关系，所以datExpr0的colnames和filtered_normalized_counts的rownames是一致的
+# 都是基因名，相当于后面的probes
+test_module_transcriptName <- rownames(filtered_TPM_normalized_counts)[test_module_index]
+length(test_module_transcriptName); test_module_transcriptName
+
+
+
+# 也可以指定感兴趣的模块进行分析，每一个module都分配了一个color
+# 比如对module = 'pink’ 的模块进行分析
+# 'pink' module gene
+module <- c('pink')
+column <- match(module, modNames)
+moduleGenes <- moduleColors == module
+head(moduleGenes)
+head(moduleColors)
+test_module_index <- which(moduleColors == module) # the index of genes which belong to 'blue' module
+length(colnames(datExpr0)[test_module_index])
+length(rownames(filtered_TPM_normalized_counts)[test_module_index])
+# 注意datExpr0和filtered_normalized_counts是转置的关系，所以datExpr0的colnames和filtered_normalized_counts的rownames是一致的
+# 都是基因名，相当于后面的probes
+test_module_transcriptName <- rownames(filtered_TPM_normalized_counts)[test_module_index]
+length(test_module_transcriptName); test_module_transcriptName
+
+
+#===========================================================================
+#
+#                          Enrichment analysis
+#
+#===========================================================================
+
+############################### beta cell ##################################
+
+##### Use biomaRt to convert gene ID of differential expressed genes with very significant p-value
+mart <- useMart('ensembl')
+ensembl <- useDataset('drerio_gene_ensembl', mart)
+listFilters(ensembl)
+beta_genes <- getBM(attribute=c('ensembl_gene_id', 'entrezgene','zfin_id_symbol'),
+                          filters = 'ensembl_gene_id', values= test_module_transcriptName, mart = ensembl)
+beta_genes <- beta_genes[!is.na(beta_genes$entrezgene),]
+
+#### The input for enrichment analysis is entrezgene id 
+beta_genes <- unique(beta_genes$entrezgene)
+
+
+#### Biological Process
+##### Calculate 'BP' GO 
+BP <- enrichGO(beta_genes,'org.Dr.eg.db',pvalueCutoff = 0.05,pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'BP', readable = readable)
+result_BP <- simplify(BP,cutoff = 0.7, by = 'p.adjust', select_fun = min)
+result_BP
+##### dotplot
+dotplot(result_BP,showCategory = 10)+scale_size(range = c(2,15))+ggplot2::xlim(NA, 0.1)+scale_color_continuous(low = 'purple', high = 'green')  # Use scale_size to change the size of the bubble, if the bubble is too large and be cut by the edge, you can used xlim to extend the x axis
+dotplot(result_BP,showCategory = 10,x = 'count')+scale_size(range = c(2,12))+xlim(NA,25) + scale_color_viridis()
+##### barplot
+barplot(result_BP,drop = T, showCategory = 10) + 
+  scale_x_discrete(labels = function(x)str_wrap(x, width = 25)) 
+barplot(result_BP,x = 'count', showCategory = 10) + 
+  scale_x_discrete(labels = function(x)str_wrap(x, width = 25)) 
+goplot(result_BP)
+##### Gene-concept network (cnetplot): sometimes very complicated and not easy to read
+cnetplot(result_BP)
+cnetplot(result_BP, circular = T)
+?cnetplot
+
+#### Molecular Function
+MF <- enrichGO(beta_genes,'org.Dr.eg.db',pvalueCutoff = 0.05, pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'MF', readable = readable)
+result_MF <- simplify(MF,cutoff = 0.7, by = 'p.adjust', select_fun = min)
+result_MF
+dotplot(result_MF,showCategory = 10)+scale_size(range = c(2,15))+ggplot2::xlim(NA, 0.04)+scale_color_continuous(low = 'purple', high = 'green') 
+barplot(result_MF,drop = T, showCategory = 10)
+plotGOgraph(result_MF)
+goplot(result_MF)
+#### Cellular Component
+CC <- enrichGO(beta_genes,'org.Dr.eg.db',pvalueCutoff = 0.2,pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'CC', readable = readable)
+result_CC <- simplify(CC,cutoff = 0.7, by = 'p.adjust', select_fun = min)
+result_CC
+dotplot(result_CC,showCategory = 10)+scale_size(range = c(2,15))+ggplot2::xlim(NA, 0.05)+scale_color_continuous(low = 'purple', high = 'green') 
+barplot(result_CC,drop = T, showCategory = 10)
+plotGOgraph(result_CC)
+goplot(result_CC)
+#### KEGG pathway
+kk <- enrichKEGG(beta_genes,organism = 'dre',keyType = 'kegg',pvalueCutoff = 0.4,pAdjustMethod = 'BH',qvalueCutoff = 0.5)
+result_kk <- setReadable(kk,'org.Dr.eg.db',keytype = 'ENTREZID')
+result_kk
+dotplot(result_kk)+scale_size(range = c(2,15))+ggplot2::xlim(NA,0.085)
+cnetplot(result_kk,categorySize = 'aa$geneNum', showCategory = 5)
+
+
+
+
+############################### alpha cell ##################################
+# 也可以指定感兴趣的模块进行分析，每一个module都分配了一个color
+# 比如对module = 'turquoise’ 的模块进行分析
+# 'turquoise' module gene
+module <- c('turquoise')
+column <- match(module, modNames)
+moduleGenes <- moduleColors == module
+head(moduleGenes)
+head(moduleColors)
+test_module_index <- which(moduleColors == module) # the index of genes which belong to 'blue' module
+length(colnames(datExpr0)[test_module_index])
+length(rownames(filtered_TPM_normalized_counts)[test_module_index])
+# 注意datExpr0和filtered_normalized_counts是转置的关系，所以datExpr0的colnames和filtered_normalized_counts的rownames是一致的
+# 都是基因名，相当于后面的probes
+test_module_transcriptName <- rownames(filtered_TPM_normalized_counts)[test_module_index]
+length(test_module_transcriptName); test_module_transcriptName
+
+
+alpha_genes <- getBM(attribute=c('ensembl_gene_id', 'entrezgene','zfin_id_symbol'),
+                    filters = 'ensembl_gene_id', values= test_module_transcriptName, mart = ensembl)
+alpha_genes <- alpha_genes[!is.na(alpha_genes$entrezgene),]
+
+#### The input for enrichment analysis is entrezgene id 
+alpha_genes <- unique(alpha_genes$entrezgene)
+
+
+#### Biological Process
+##### Calculate 'BP' GO 
+BP <- enrichGO(alpha_genes,'org.Dr.eg.db',pvalueCutoff = 0.05,pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'BP', readable = readable)
+result_BP <- simplify(BP,cutoff = 0.7, by = 'p.adjust', select_fun = min)
+result_BP
+##### dotplot
+dotplot(result_BP,showCategory = 10)+scale_size(range = c(2,15))+ggplot2::xlim(NA, 0.1)+scale_color_continuous(low = 'purple', high = 'green')  # Use scale_size to change the size of the bubble, if the bubble is too large and be cut by the edge, you can used xlim to extend the x axis
+dotplot(result_BP,showCategory = 10,x = 'count')+scale_size(range = c(2,12))+xlim(NA,50) + scale_color_viridis()
+##### barplot
+barplot(result_BP,drop = T, showCategory = 10) + 
+  scale_x_discrete(labels = function(x)str_wrap(x, width = 25)) 
+barplot(result_BP,x = 'count', showCategory = 10) + 
+  scale_x_discrete(labels = function(x)str_wrap(x, width = 25)) 
+plotGOgraph(result_BP)
+goplot(result_BP)
+##### Gene-concept network (cnetplot): sometimes very complicated and not easy to read
+cnetplot(result_BP)
+cnetplot(result_BP, circular = T)
+?cnetplot
+
+#### Molecular Function
+MF <- enrichGO(alpha_genes,'org.Dr.eg.db',pvalueCutoff = 0.05, pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'MF', readable = readable)
+result_MF <- simplify(MF,cutoff = 0.7, by = 'p.adjust', select_fun = min)
+result_MF
+dotplot(result_MF,showCategory = 10)+scale_size(range = c(2,15))+ggplot2::xlim(NA, 0.06)+scale_color_continuous(low = 'purple', high = 'green') 
+barplot(result_MF,drop = T, showCategory = 10)
+plotGOgraph(result_MF)
+goplot(result_MF)
+cnetplot(result_MF)
+#### Cellular Component
+CC <- enrichGO(alpha_genes,'org.Dr.eg.db',pvalueCutoff = 0.05,pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'CC', readable = readable)
+result_CC <- simplify(CC,cutoff = 0.7, by = 'p.adjust', select_fun = min)
+result_CC
+dotplot(result_CC,showCategory = 10)+scale_size(range = c(2,15))+ggplot2::xlim(NA, 0.04)+scale_color_continuous(low = 'purple', high = 'green') 
+barplot(result_CC,drop = T, showCategory = 10)
+plotGOgraph(result_CC)
+goplot(result_CC)
+cnetplot(result_CC)
+#### KEGG pathway
+kk <- enrichKEGG(alpha_genes,organism = 'dre',keyType = 'kegg',pvalueCutoff = 0.05,pAdjustMethod = 'BH',qvalueCutoff = 0.5)
+result_kk <- setReadable(kk,'org.Dr.eg.db',keytype = 'ENTREZID')
+result_kk
+dotplot(result_kk)+scale_size(range = c(2,15))+ggplot2::xlim(NA,0.12)
+barplot(result_kk,drop = T, showCategory = 10)
+cnetplot(result_kk,categorySize = 'aa$geneNum', showCategory = 5)
+
+
+
+
+############################### delta cell ##################################
+# 也可以指定感兴趣的模块进行分析，每一个module都分配了一个color
+# 比如对module = 'red’ 的模块进行分析
+# 'red' module gene
+module <- c('red')
+column <- match(module, modNames)
+moduleGenes <- moduleColors == module
+head(moduleGenes)
+head(moduleColors)
+test_module_index <- which(moduleColors == module) # the index of genes which belong to 'blue' module
+length(colnames(datExpr0)[test_module_index])
+length(rownames(filtered_TPM_normalized_counts)[test_module_index])
+# 注意datExpr0和filtered_normalized_counts是转置的关系，所以datExpr0的colnames和filtered_normalized_counts的rownames是一致的
+# 都是基因名，相当于后面的probes
+test_module_transcriptName <- rownames(filtered_TPM_normalized_counts)[test_module_index]
+length(test_module_transcriptName); test_module_transcriptName
+
+
+delta_genes <- getBM(attribute=c('ensembl_gene_id', 'entrezgene','zfin_id_symbol'),
+                     filters = 'ensembl_gene_id', values= test_module_transcriptName, mart = ensembl)
+delta_genes <- delta_genes[!is.na(delta_genes$entrezgene),]
+
+#### The input for enrichment analysis is entrezgene id 
+delta_genes <- unique(delta_genes$entrezgene)
+
+
+#### Biological Process
+##### Calculate 'BP' GO 
+BP <- enrichGO(delta_genes,'org.Dr.eg.db',pvalueCutoff = 0.05,pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'BP', readable = readable)
+result_BP <- simplify(BP,cutoff = 0.7, by = 'p.adjust', select_fun = min)
+result_BP
+##### dotplot
+dotplot(result_BP,showCategory = 10)+scale_size(range = c(2,15))+ggplot2::xlim(NA, 0.075)+scale_color_continuous(low = 'purple', high = 'green')  # Use scale_size to change the size of the bubble, if the bubble is too large and be cut by the edge, you can used xlim to extend the x axis
+dotplot(result_BP,showCategory = 10,x = 'count')+scale_size(range = c(2,12))+xlim(NA,60) + scale_color_viridis()
+##### barplot
+barplot(result_BP,drop = T, showCategory = 10) + 
+  scale_x_discrete(labels = function(x)str_wrap(x, width = 25)) 
+barplot(result_BP,x = 'count', showCategory = 10) + 
+  scale_x_discrete(labels = function(x)str_wrap(x, width = 25)) 
+plotGOgraph(result_BP)
+goplot(result_BP)
+##### Gene-concept network (cnetplot): sometimes very complicated and not easy to read
+cnetplot(result_BP)
+cnetplot(result_BP, circular = T)
+?cnetplot
+
+#### Molecular Function
+MF <- enrichGO(delta_genes,'org.Dr.eg.db',pvalueCutoff = 0.05, pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'MF', readable = readable)
+result_MF <- simplify(MF,cutoff = 0.7, by = 'p.adjust', select_fun = min)
+result_MF
+dotplot(result_MF,showCategory = 10)+scale_size(range = c(2,15))+ggplot2::xlim(NA, 0.04)+scale_color_continuous(low = 'purple', high = 'green') 
+barplot(result_MF,drop = T, showCategory = 10)
+plotGOgraph(result_MF)
+goplot(result_MF)
+cnetplot(result_MF)
+#### Cellular Component
+CC <- enrichGO(delta_genes,'org.Dr.eg.db',pvalueCutoff = 0.05,pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'CC', readable = readable)
+result_CC <- simplify(CC,cutoff = 0.7, by = 'p.adjust', select_fun = min)
+result_CC
+dotplot(result_CC,showCategory = 10)+scale_size(range = c(2,15))+ggplot2::xlim(NA, 0.05)+scale_color_continuous(low = 'purple', high = 'green') 
+barplot(result_CC,drop = T, showCategory = 10)
+plotGOgraph(result_CC)
+goplot(result_CC)
+cnetplot(result_CC)
+#### KEGG pathway
+kk <- enrichKEGG(delta_genes,organism = 'dre',keyType = 'kegg',pvalueCutoff = 0.05,pAdjustMethod = 'BH',qvalueCutoff = 0.5)
+result_kk <- setReadable(kk,'org.Dr.eg.db',keytype = 'ENTREZID')
+result_kk
+dotplot(result_kk)+scale_size(range = c(2,15))+ggplot2::xlim(NA,0.135)
+barplot(result_kk,drop = T, showCategory = 10)
+cnetplot(result_kk,categorySize = 'aa$geneNum', showCategory = 5)
