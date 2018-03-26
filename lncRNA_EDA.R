@@ -32,6 +32,7 @@ readable = T
 library("DOSE")
 library("clusterProfiler")
 library("enrichplot")
+library('viridis')
 library("BiocParallel")
 library("stringr")
 # library("pathview")
@@ -1088,24 +1089,6 @@ test_module_transcriptName <- rownames(filtered_TPM_normalized_counts)[test_modu
 length(test_module_transcriptName); test_module_transcriptName
 
 
-
-# 也可以指定感兴趣的模块进行分析，每一个module都分配了一个color
-# 比如对module = 'pink’ 的模块进行分析
-# 'pink' module gene
-module <- c('pink')
-column <- match(module, modNames)
-moduleGenes <- moduleColors == module
-head(moduleGenes)
-head(moduleColors)
-test_module_index <- which(moduleColors == module) # the index of genes which belong to 'blue' module
-length(colnames(datExpr0)[test_module_index])
-length(rownames(filtered_TPM_normalized_counts)[test_module_index])
-# 注意datExpr0和filtered_normalized_counts是转置的关系，所以datExpr0的colnames和filtered_normalized_counts的rownames是一致的
-# 都是基因名，相当于后面的probes
-test_module_transcriptName <- rownames(filtered_TPM_normalized_counts)[test_module_index]
-length(test_module_transcriptName); test_module_transcriptName
-
-
 #===========================================================================
 #
 #                          Enrichment analysis
@@ -1113,6 +1096,7 @@ length(test_module_transcriptName); test_module_transcriptName
 #===========================================================================
 
 ############################### beta cell ##################################
+### Only consider 'greenyellow' module
 
 ##### Use biomaRt to convert gene ID of differential expressed genes with very significant p-value
 mart <- useMart('ensembl')
@@ -1143,7 +1127,6 @@ goplot(result_BP)
 ##### Gene-concept network (cnetplot): sometimes very complicated and not easy to read
 cnetplot(result_BP)
 cnetplot(result_BP, circular = T)
-?cnetplot
 
 #### Molecular Function
 MF <- enrichGO(beta_genes,'org.Dr.eg.db',pvalueCutoff = 0.05, pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'MF', readable = readable)
@@ -1167,6 +1150,100 @@ result_kk <- setReadable(kk,'org.Dr.eg.db',keytype = 'ENTREZID')
 result_kk
 dotplot(result_kk)+scale_size(range = c(2,15))+ggplot2::xlim(NA,0.085)
 cnetplot(result_kk,categorySize = 'aa$geneNum', showCategory = 5)
+
+
+############################### beta cell ##################################
+
+# 也可以指定感兴趣的模块进行分析，每一个module都分配了一个color
+# 比如对module = 'greenyellow’ 的模块进行分析
+# 'green' module gene
+module <- c('greenyellow')
+column <- match(module, modNames)
+moduleGenes <- moduleColors == module
+head(moduleGenes)
+head(moduleColors)
+test_module_index <- which(moduleColors == module) # the index of genes which belong to 'blue' module
+length(colnames(datExpr0)[test_module_index])
+length(rownames(filtered_TPM_normalized_counts)[test_module_index])
+# 注意datExpr0和filtered_normalized_counts是转置的关系，所以datExpr0的colnames和filtered_normalized_counts的rownames是一致的
+# 都是基因名，相当于后面的probes
+test_module_transcriptName <- rownames(filtered_TPM_normalized_counts)[test_module_index]
+length(test_module_transcriptName); test_module_transcriptName
+
+
+
+# 也可以指定感兴趣的模块进行分析，每一个module都分配了一个color
+# 比如对module = 'pink’ 的模块进行分析
+# 'pink' module gene
+module <- c('pink')
+column <- match(module, modNames)
+moduleGenes <- moduleColors == module
+head(moduleGenes)
+head(moduleColors)
+test_module_index <- which(moduleColors == module) # the index of genes which belong to 'blue' module
+length(colnames(datExpr0)[test_module_index])
+length(rownames(filtered_TPM_normalized_counts)[test_module_index])
+# 注意datExpr0和filtered_normalized_counts是转置的关系，所以datExpr0的colnames和filtered_normalized_counts的rownames是一致的
+# 都是基因名，相当于后面的probes
+test_module_transcriptName1 <- rownames(filtered_TPM_normalized_counts)[test_module_index]
+length(test_module_transcriptName1); test_module_transcriptName1
+
+test_module_transcriptName <- c(test_module_transcriptName1, test_module_transcriptName)
+length(test_module_transcriptName)
+
+### consider 'greenyellow' and 'purple' two modules together
+
+beta_genes <- getBM(attribute=c('ensembl_gene_id', 'entrezgene','zfin_id_symbol'),
+                    filters = 'ensembl_gene_id', values= test_module_transcriptName, mart = ensembl)
+beta_genes <- beta_genes[!is.na(beta_genes$entrezgene),]
+
+#### The input for enrichment analysis is entrezgene id 
+beta_genes <- unique(beta_genes$entrezgene)
+
+
+#### Biological Process
+##### Calculate 'BP' GO 
+BP <- enrichGO(beta_genes,'org.Dr.eg.db',pvalueCutoff = 0.05,pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'BP', readable = readable)
+result_BP <- simplify(BP,cutoff = 0.7, by = 'p.adjust', select_fun = min)
+result_BP
+##### dotplot
+dotplot(result_BP,showCategory = 10)+scale_size(range = c(2,15))+ggplot2::xlim(NA, 0.06)+scale_color_continuous(low = 'purple', high = 'green')  # Use scale_size to change the size of the bubble, if the bubble is too large and be cut by the edge, you can used xlim to extend the x axis
+dotplot(result_BP,showCategory = 10,x = 'count')+scale_size(range = c(2,12))+xlim(NA,30) + scale_color_viridis()
+##### barplot
+barplot(result_BP,drop = T, showCategory = 10) + 
+  scale_x_discrete(labels = function(x)str_wrap(x, width = 25)) 
+barplot(result_BP,x = 'count', showCategory = 10) + 
+  scale_x_discrete(labels = function(x)str_wrap(x, width = 25)) 
+goplot(result_BP)
+##### Gene-concept network (cnetplot): sometimes very complicated and not easy to read
+cnetplot(result_BP)
+cnetplot(result_BP, circular = T)
+
+#### Molecular Function
+MF <- enrichGO(beta_genes,'org.Dr.eg.db',pvalueCutoff = 0.05, pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'MF', readable = readable)
+result_MF <- simplify(MF,cutoff = 0.7, by = 'p.adjust', select_fun = min)
+result_MF
+dotplot(result_MF,showCategory = 10)+scale_size(range = c(2,15))+ggplot2::xlim(NA, 0.04)+scale_color_continuous(low = 'purple', high = 'green') 
+barplot(result_MF,drop = T, showCategory = 10)
+plotGOgraph(result_MF)
+goplot(result_MF)
+#### Cellular Component
+CC <- enrichGO(beta_genes,'org.Dr.eg.db',pvalueCutoff = 0.2,pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'CC', readable = readable)
+result_CC <- simplify(CC,cutoff = 0.7, by = 'p.adjust', select_fun = min)
+result_CC
+dotplot(result_CC,showCategory = 10)+scale_size(range = c(2,15))+ggplot2::xlim(NA, 0.05)+scale_color_continuous(low = 'purple', high = 'green') 
+barplot(result_CC,drop = T, showCategory = 10)
+plotGOgraph(result_CC)
+goplot(result_CC)
+#### KEGG pathway
+kk <- enrichKEGG(beta_genes,organism = 'dre',keyType = 'kegg',pvalueCutoff = 0.4,pAdjustMethod = 'BH',qvalueCutoff = 0.5)
+result_kk <- setReadable(kk,'org.Dr.eg.db',keytype = 'ENTREZID')
+result_kk
+dotplot(result_kk)+scale_size(range = c(2,15))+ggplot2::xlim(NA,0.085)
+cnetplot(result_kk,categorySize = 'aa$geneNum', showCategory = 5)
+
+
+
 
 
 
