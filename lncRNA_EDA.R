@@ -928,12 +928,12 @@ p <- ggplot(datExpr1, aes(x = log2_mean, y = log2_CV))+ geom_point() +
   geom_smooth(method = lm, col = 'red', na.rm = T) + 
   ylim(c(0,2.8)) +
   xlim(0,10) +
-  geom_vline(xintercept = c(0,0.1), col = 'darkgreen', lty = 2) +
+  geom_vline(xintercept = 5, col = 'darkgreen', lty = 2) +
   theme_classic();  p
 
 model_xlog2mean_ylog2CV <- loess(datExpr1$log2_CV ~ datExpr1$log2_mean, span = 0.8, method = 'loess')
 prediction <- predict(object = model_xlog2mean_ylog2CV, data.frame(datExpr1$log2_mean), se = T)
-datExpr0 <- datExpr1[datExpr1$log2_CV > (prediction$fit + 2*prediction$se.fit) & datExpr1$log2_mean > 2.5,1:20]; dim(datExpr0) 
+datExpr0 <- datExpr1[datExpr1$log2_CV > (prediction$fit + 2*prediction$se.fit) & datExpr1$log2_mean > 5,1:20]; dim(datExpr0) 
 
 
 
@@ -951,7 +951,7 @@ head(pearson_cor); dim(pearson_cor)
 hc <- hcluster(t(datExpr0), method="pearson")
 hmcol <- colorRampPalette(brewer.pal(9, "GnBu"))(100)
 heatmap.2(pearson_cor, Rowv = as.dendrogram(hc), trace = 'none',symm = T, col = hmcol, main = 'The pearson correlation of each')
-pheatmap(pearson_cor, cutree_rows = 4, cutree_cols = 4)
+pheatmap(pearson_cor, cutree_rows = 4, cutree_cols = 4, annotation_row = sample, annotation_col = sample)
 
 
 
@@ -970,7 +970,7 @@ plotDendroAndColors(sampleTree, traitColors, groupLabels = names(traitData), mai
 ################ STEP 2: Network Construction #############
 ######## Select the best soft-thresholding power #########
 ## Choose a set of soft-thresholding powers
-powers <- c(1:30)
+powers <- seq(1,30,2)
 ## Call the Network Topological Analysis function
 sft <- pickSoftThreshold(t(datExpr0), powerVector = powers, verbose = 5)  # This step takes some time.
 par(mfrow = c(1,2), mar = c(6.5,8,3,3))
@@ -1018,7 +1018,7 @@ MEDiss <- 1-cor(MEs)
 METree <- hclust(as.dist(MEDiss), method = 'average')
 par(mfrow = c(1,1))
 plot(METree, main = 'Clustering of module eigengene', xlab = '', sub = '')
-MEDissThres = 0.58 # set the threshold to make some branches together
+MEDissThres = 0.45 # set the threshold to make some branches together
 abline(h = MEDissThres, col = 'red')
 Merge <- mergeCloseModules(t(datExpr0), dynamicColors, cutHeight = MEDissThres, verbose = 3)
 mergedColors <- Merge$colors
@@ -1042,7 +1042,7 @@ moduleTraitPvalue <- corPvalueStudent(moduleTraitCor, nSample)
 textMatrix = paste(signif(moduleTraitCor,2),"\n(", signif(moduleTraitPvalue,1),")", sep = "")
 dim(textMatrix) <- dim(moduleTraitCor)
 par(mfrow = c(1,1))
-par(mar = c(6,10,3,3))
+par(mar = c(3,8,2,2))
 labeledHeatmap(Matrix = moduleTraitCor,
                xLabels = names(traitData),
                yLabels = names(MEs),
@@ -1051,13 +1051,13 @@ labeledHeatmap(Matrix = moduleTraitCor,
                colors = blueWhiteRed(50),
                textMatrix = textMatrix,
                setStdMargins = F,
-               cex.text = 0.5,
+               cex.text = 0.8,
                zlim <- c(-1,1),
                main = paste('Module-trait relationships'))
 
 
 
-nSelect <- 400
+nSelect <- 800
 set.seed(10)
 select <- sample(nGene, size = nSelect)
 selectTOM <- dissTOM[select, select]
@@ -1065,7 +1065,7 @@ selectTree <- hclust(as.dist(selectTOM), method = 'average')
 selectColors <- moduleColors[select]
 plotDiss <- selectTOM^8
 diag(plotDiss) <- NA
-TOMplot(plotDiss, selectTree, selectColors, main = 'Network heatmap plot, select genes')
+TOMplot(plotDiss, selectTree, selectColors, main = 'Network heatmap plot, randomly select 800 genes')
 
 ###################### Visualizing the gene network of eigengene ###################
 par(cex = 0.9)
@@ -1095,7 +1095,7 @@ names(GSPvalue) <- paste("p.GS.", traitNames, sep = "")
 # 也可以指定感兴趣的模块进行分析，每一个module都分配了一个color
 # 比如对module = 'greenyellow’ 的模块进行分析
 # 'green' module gene
-module <- c('greenyellow')
+module <- c('yellow')
 column <- match(module, modNames)
 moduleGenes <- moduleColors == module
 head(moduleGenes)
@@ -1149,15 +1149,15 @@ cnetplot(result_BP)
 cnetplot(result_BP, circular = T)
 
 #### Molecular Function
-MF <- enrichGO(beta_genes,'org.Dr.eg.db',pvalueCutoff = 0.1, pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'MF', readable = readable)
+MF <- enrichGO(beta_genes,'org.Dr.eg.db',pvalueCutoff = 0.2, pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'MF', readable = readable)
 result_MF <- simplify(MF,cutoff = 0.7, by = 'p.adjust', select_fun = min)
 result_MF
-dotplot(result_MF,showCategory = 10)+scale_size(range = c(2,15))+ggplot2::xlim(NA, 0.04)+scale_color_continuous(low = 'purple', high = 'green') 
+dotplot(result_MF,showCategory = 10)+scale_size(range = c(2,10))+ggplot2::xlim(NA, 0.04)+scale_color_continuous(low = 'purple', high = 'green') 
 barplot(result_MF,drop = T, showCategory = 10)
 plotGOgraph(result_MF)
 goplot(result_MF)
 #### Cellular Component
-CC <- enrichGO(beta_genes,'org.Dr.eg.db',pvalueCutoff = 0.2,pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'CC', readable = readable)
+CC <- enrichGO(beta_genes,'org.Dr.eg.db',pvalueCutoff = 0.4,pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'CC', readable = readable)
 result_CC <- simplify(CC,cutoff = 0.7, by = 'p.adjust', select_fun = min)
 result_CC
 dotplot(result_CC,showCategory = 10)+scale_size(range = c(2,15))+ggplot2::xlim(NA, 0.05)+scale_color_continuous(low = 'purple', high = 'green') 
@@ -1277,7 +1277,7 @@ pa <- enrichPathway(beta_genes,organism = 'zebrafish',pvalueCutoff = 0.05 ,pAdju
 # 也可以指定感兴趣的模块进行分析，每一个module都分配了一个color
 # 比如对module = 'turquoise’ 的模块进行分析
 # 'turquoise' module gene
-module <- c('turquoise')
+module <- c('blue')
 column <- match(module, modNames)
 moduleGenes <- moduleColors == module
 head(moduleGenes)
@@ -1305,7 +1305,7 @@ BP <- enrichGO(alpha_genes,'org.Dr.eg.db',pvalueCutoff = 0.05,pAdjustMethod = 'B
 result_BP <- simplify(BP,cutoff = 0.7, by = 'p.adjust', select_fun = min)
 result_BP
 ##### dotplot
-dotplot(result_BP,showCategory = 10)+scale_size(range = c(2,15))+ggplot2::xlim(NA, 0.1)+scale_color_continuous(low = 'purple', high = 'green')  # Use scale_size to change the size of the bubble, if the bubble is too large and be cut by the edge, you can used xlim to extend the x axis
+dotplot(result_BP,showCategory = 10)+scale_size(range = c(2,15))+ggplot2::xlim(NA, 0.075)+scale_color_continuous(low = 'purple', high = 'green')  # Use scale_size to change the size of the bubble, if the bubble is too large and be cut by the edge, you can used xlim to extend the x axis
 dotplot(result_BP,showCategory = 10,x = 'count')+scale_size(range = c(2,12))+xlim(NA,50) + scale_color_viridis()
 ##### barplot
 barplot(result_BP,drop = T, showCategory = 10) + 
@@ -1323,7 +1323,7 @@ cnetplot(result_BP, circular = T)
 MF <- enrichGO(alpha_genes,'org.Dr.eg.db',pvalueCutoff = 0.05, pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'MF', readable = readable)
 result_MF <- simplify(MF,cutoff = 0.7, by = 'p.adjust', select_fun = min)
 result_MF
-dotplot(result_MF,showCategory = 10)+scale_size(range = c(2,15))+ggplot2::xlim(NA, 0.06)+scale_color_continuous(low = 'purple', high = 'green') 
+dotplot(result_MF,showCategory = 10)+scale_size(range = c(2,10))+ggplot2::xlim(NA, 0.07)+scale_color_continuous(low = 'purple', high = 'green') 
 barplot(result_MF,drop = T, showCategory = 10)
 plotGOgraph(result_MF)
 goplot(result_MF)
@@ -1332,7 +1332,7 @@ cnetplot(result_MF)
 CC <- enrichGO(alpha_genes,'org.Dr.eg.db',pvalueCutoff = 0.05,pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'CC', readable = readable)
 result_CC <- simplify(CC,cutoff = 0.7, by = 'p.adjust', select_fun = min)
 result_CC
-dotplot(result_CC,showCategory = 10)+scale_size(range = c(2,15))+ggplot2::xlim(NA, 0.04)+scale_color_continuous(low = 'purple', high = 'green') 
+dotplot(result_CC,showCategory = 10)+scale_size(range = c(2,15))+ggplot2::xlim(NA, 0.045)+scale_color_continuous(low = 'purple', high = 'green') 
 barplot(result_CC,drop = T, showCategory = 10)
 plotGOgraph(result_CC)
 goplot(result_CC)
@@ -1341,7 +1341,7 @@ cnetplot(result_CC)
 kk <- enrichKEGG(alpha_genes,organism = 'dre',keyType = 'kegg',pvalueCutoff = 0.05,pAdjustMethod = 'BH',qvalueCutoff = 0.5)
 result_kk <- setReadable(kk,'org.Dr.eg.db',keytype = 'ENTREZID')
 result_kk
-dotplot(result_kk)+scale_size(range = c(2,15))+ggplot2::xlim(NA,0.12)
+dotplot(result_kk)+scale_size(range = c(2,15))+ggplot2::xlim(NA,0.09)+scale_color_continuous(low = 'purple', high = 'green') 
 barplot(result_kk,drop = T, showCategory = 10)
 cnetplot(result_kk,categorySize = 'aa$geneNum', showCategory = 5)
 #### ReactomePA
@@ -1349,14 +1349,14 @@ pa <- enrichPathway(alpha_genes,organism = 'zebrafish',pvalueCutoff = 0.05 ,pAdj
 summary(pa)
 result_pa <- setReadable(pa,'org.Dr.eg.db',keytype = 'ENTREZID')
 result_pa
-dotplot(result_pa)+scale_size(range = c(2,15))+ggplot2::xlim(NA,0.12)
+dotplot(result_pa)+scale_size(range = c(2,15))+ggplot2::xlim(NA,0.13)+scale_color_continuous(low = 'purple', high = 'green') 
 
 
 ############################### delta cell ##################################
 # 也可以指定感兴趣的模块进行分析，每一个module都分配了一个color
 # 比如对module = 'red’ 的模块进行分析
 # 'red' module gene
-module <- c('brown')
+module <- c('turquoise')
 column <- match(module, modNames)
 moduleGenes <- moduleColors == module
 head(moduleGenes)
@@ -1384,7 +1384,7 @@ BP <- enrichGO(delta_genes,'org.Dr.eg.db',pvalueCutoff = 0.05,pAdjustMethod = 'B
 result_BP <- simplify(BP,cutoff = 0.7, by = 'p.adjust', select_fun = min)
 result_BP
 ##### dotplot
-dotplot(result_BP,showCategory = 10)+scale_size(range = c(2,15))+ggplot2::xlim(NA, 0.075)+scale_color_continuous(low = 'purple', high = 'green')  # Use scale_size to change the size of the bubble, if the bubble is too large and be cut by the edge, you can used xlim to extend the x axis
+dotplot(result_BP,showCategory = 10)+scale_size(range = c(2,15))+ggplot2::xlim(NA, 0.07)+scale_color_continuous(low = 'purple', high = 'green')  # Use scale_size to change the size of the bubble, if the bubble is too large and be cut by the edge, you can used xlim to extend the x axis
 dotplot(result_BP,showCategory = 10,x = 'count')+scale_size(range = c(2,12))+xlim(NA,60) + scale_color_viridis()
 ##### barplot
 barplot(result_BP,drop = T, showCategory = 10) + 
@@ -1402,7 +1402,7 @@ cnetplot(result_BP, circular = T)
 MF <- enrichGO(delta_genes,'org.Dr.eg.db',pvalueCutoff = 0.05, pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'MF', readable = readable)
 result_MF <- simplify(MF,cutoff = 0.7, by = 'p.adjust', select_fun = min)
 result_MF
-dotplot(result_MF,showCategory = 10)+scale_size(range = c(2,15))+ggplot2::xlim(NA, 0.04)+scale_color_continuous(low = 'purple', high = 'green') 
+dotplot(result_MF,showCategory = 10)+scale_size(range = c(2,15))+ggplot2::xlim(NA, 0.08)+scale_color_continuous(low = 'purple', high = 'green') 
 barplot(result_MF,drop = T, showCategory = 10)
 plotGOgraph(result_MF)
 goplot(result_MF)
@@ -1411,16 +1411,16 @@ cnetplot(result_MF)
 CC <- enrichGO(delta_genes,'org.Dr.eg.db',pvalueCutoff = 0.05,pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'CC', readable = readable)
 result_CC <- simplify(CC,cutoff = 0.7, by = 'p.adjust', select_fun = min)
 result_CC
-dotplot(result_CC,showCategory = 10)+scale_size(range = c(2,15))+ggplot2::xlim(NA, 0.05)+scale_color_continuous(low = 'purple', high = 'green') 
+dotplot(result_CC,showCategory = 10)+scale_size(range = c(2,15))+ggplot2::xlim(NA, 0.055)+scale_color_continuous(low = 'purple', high = 'green') 
 barplot(result_CC,drop = T, showCategory = 10)
 plotGOgraph(result_CC)
 goplot(result_CC)
 cnetplot(result_CC)
 #### KEGG pathway
-kk <- enrichKEGG(delta_genes,organism = 'dre',keyType = 'kegg',pvalueCutoff = 0.05,pAdjustMethod = 'BH',qvalueCutoff = 0.5)
+kk <- enrichKEGG(delta_genes,organism = 'dre',keyType = 'kegg',pvalueCutoff = 0.05,pAdjustMethod = 'BH',qvalueCutoff = 0.5) 
 result_kk <- setReadable(kk,'org.Dr.eg.db',keytype = 'ENTREZID')
 result_kk
-dotplot(result_kk)+scale_size(range = c(2,15))+ggplot2::xlim(NA,0.135)
+dotplot(result_kk)+scale_size(range = c(2,15))+ggplot2::xlim(NA,0.135)+scale_color_continuous(low = 'purple', high = 'green') 
 barplot(result_kk,drop = T, showCategory = 10)
 cnetplot(result_kk,categorySize = 'aa$geneNum', showCategory = 5)
 #### ReactomePA
@@ -1428,7 +1428,7 @@ pa <- enrichPathway(delta_genes,organism = 'zebrafish',pvalueCutoff = 0.05 ,pAdj
 summary(pa)
 result_pa <- setReadable(pa,'org.Dr.eg.db',keytype = 'ENTREZID')
 result_pa
-dotplot(result_pa)+scale_size(range = c(2,15))+ggplot2::xlim(NA,0.12)
+dotplot(result_pa)+scale_size(range = c(2,15))+ggplot2::xlim(NA,0.1115)+scale_color_continuous(low = 'purple', high = 'green') 
 
 
 ############################### acinal cell ##################################
@@ -1463,7 +1463,7 @@ BP <- enrichGO(acinal_genes,'org.Dr.eg.db',pvalueCutoff = 0.05,pAdjustMethod = '
 result_BP <- simplify(BP,cutoff = 0.7, by = 'p.adjust', select_fun = min)
 result_BP
 ##### dotplot
-dotplot(result_BP,showCategory = 10)+scale_size(range = c(2,15))+ggplot2::xlim(NA, 0.1)+scale_color_continuous(low = 'purple', high = 'green')  # Use scale_size to change the size of the bubble, if the bubble is too large and be cut by the edge, you can used xlim to extend the x axis
+dotplot(result_BP,showCategory = 10)+scale_size(range = c(2,15))+ggplot2::xlim(NA, 0.11)+scale_color_continuous(low = 'purple', high = 'green')  # Use scale_size to change the size of the bubble, if the bubble is too large and be cut by the edge, you can used xlim to extend the x axis
 dotplot(result_BP,showCategory = 10,x = 'count')+scale_size(range = c(2,12))+xlim(NA,110) + scale_color_viridis()
 ##### barplot
 barplot(result_BP,drop = T, showCategory = 10) + 
@@ -1498,7 +1498,7 @@ cnetplot(result_CC)
 kk <- enrichKEGG(acinal_genes,organism = 'dre',keyType = 'kegg',pvalueCutoff = 0.05,pAdjustMethod = 'BH',qvalueCutoff = 0.5)
 result_kk <- setReadable(kk,'org.Dr.eg.db',keytype = 'ENTREZID')
 result_kk
-dotplot(result_kk)+scale_size(range = c(2,15))+ggplot2::xlim(NA,0.135)
+dotplot(result_kk)+scale_size(range = c(2,15))+ggplot2::xlim(NA,0.135)+scale_color_continuous(low = 'purple', high = 'green') 
 barplot(result_kk,drop = T, showCategory = 10)
 cnetplot(result_kk,categorySize = 'aa$geneNum', showCategory = 5)
 #### ReactomePA
@@ -1506,7 +1506,7 @@ pa <- enrichPathway(acinal_genes,organism = 'zebrafish',pvalueCutoff = 0.05 ,pAd
 summary(pa)
 result_pa <- setReadable(pa,'org.Dr.eg.db',keytype = 'ENTREZID')
 result_pa
-dotplot(result_pa)+scale_size(range = c(2,15))+ggplot2::xlim(NA,0.12)
+dotplot(result_pa)+scale_size(range = c(2,15))+ggplot2::xlim(NA,0.155)+scale_color_continuous(low = 'purple', high = 'green') 
 
 
 
@@ -1542,7 +1542,7 @@ BP <- enrichGO(grey_genes,'org.Dr.eg.db',pvalueCutoff = 0.05,pAdjustMethod = 'BH
 result_BP <- simplify(BP,cutoff = 0.7, by = 'p.adjust', select_fun = min)
 result_BP
 ##### dotplot
-dotplot(result_BP,showCategory = 10)+scale_size(range = c(2,15))+ggplot2::xlim(NA, 0.1)+scale_color_continuous(low = 'purple', high = 'green')  # Use scale_size to change the size of the bubble, if the bubble is too large and be cut by the edge, you can used xlim to extend the x axis
+dotplot(result_BP,showCategory = 10)+scale_size(range = c(2,15))+ggplot2::xlim(NA, 0.22)+scale_color_continuous(low = 'purple', high = 'green')  # Use scale_size to change the size of the bubble, if the bubble is too large and be cut by the edge, you can used xlim to extend the x axis
 dotplot(result_BP,showCategory = 10,x = 'count')+scale_size(range = c(2,12))+xlim(NA,110) + scale_color_viridis()
 ##### barplot
 barplot(result_BP,drop = T, showCategory = 10) + 
@@ -1559,7 +1559,7 @@ cnetplot(result_BP, circular = T)
 MF <- enrichGO(grey_genes,'org.Dr.eg.db',pvalueCutoff = 0.05, pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'MF', readable = readable)
 result_MF <- simplify(MF,cutoff = 0.7, by = 'p.adjust', select_fun = min)
 result_MF
-dotplot(result_MF,showCategory = 10)+scale_size(range = c(2,15))+ggplot2::xlim(NA, 0.065)+scale_color_continuous(low = 'purple', high = 'green') 
+dotplot(result_MF,showCategory = 10)+scale_size(range = c(2,15))+ggplot2::xlim(NA, 0.25)+scale_color_continuous(low = 'purple', high = 'green') 
 barplot(result_MF,drop = T, showCategory = 10)
 plotGOgraph(result_MF)
 goplot(result_MF)
@@ -1568,7 +1568,7 @@ cnetplot(result_MF)
 CC <- enrichGO(grey_genes,'org.Dr.eg.db',pvalueCutoff = 0.05,pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'CC', readable = readable)
 result_CC <- simplify(CC,cutoff = 0.7, by = 'p.adjust', select_fun = min)
 result_CC
-dotplot(result_CC,showCategory = 10)+scale_size(range = c(2,15))+ggplot2::xlim(NA, 0.065)+scale_color_continuous(low = 'purple', high = 'green') 
+dotplot(result_CC,showCategory = 10)+scale_size(range = c(2,15))+ggplot2::xlim(NA, 0.22)+scale_color_continuous(low = 'purple', high = 'green') 
 barplot(result_CC,drop = T, showCategory = 10)
 plotGOgraph(result_CC)
 goplot(result_CC)
@@ -1577,6 +1577,13 @@ cnetplot(result_CC)
 kk <- enrichKEGG(grey_genes,organism = 'dre',keyType = 'kegg',pvalueCutoff = 0.05,pAdjustMethod = 'BH',qvalueCutoff = 0.5)
 result_kk <- setReadable(kk,'org.Dr.eg.db',keytype = 'ENTREZID')
 result_kk
-dotplot(result_kk)+scale_size(range = c(2,15))+ggplot2::xlim(NA,0.135)
+dotplot(result_kk)+scale_size(range = c(2,15))+ggplot2::xlim(NA,0.28)+scale_color_continuous(low = 'purple', high = 'green') 
 barplot(result_kk,drop = T, showCategory = 10)
 cnetplot(result_kk,categorySize = 'aa$geneNum', showCategory = 5)
+#### ReactomePA
+pa <- enrichPathway(grey_genes,organism = 'zebrafish',pvalueCutoff = 0.05 ,pAdjustMethod = 'BH',qvalueCutoff = 0.2, readable = T)
+summary(pa)
+result_pa <- setReadable(pa,'org.Dr.eg.db',keytype = 'ENTREZID')
+result_pa
+dotplot(result_pa)+scale_size(range = c(2,15))+ggplot2::xlim(NA,0.21)+scale_color_continuous(low = 'purple', high = 'green') 
+
