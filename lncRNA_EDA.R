@@ -37,6 +37,7 @@ library("BiocParallel")
 library("stringr")
 # library("pathview")
 library("topGO")
+library("ReactomePA")
 
 
 #####################################################################################
@@ -508,6 +509,8 @@ head(pearson_cor); dim(pearson_cor)
 hc <- hcluster(t(rlogMat), method="pearson")
 #### Here I use 'heatmap.2' function from 'gplots' package.
 heatmap.2(pearson_cor, Rowv = as.dendrogram(hc), trace = 'none',symm = T, col = hmcol, main = 'The pearson correlation of each')
+pheatmap(pearson_cor)
+
 
 ## Principal Component Analysis -- PCA
 ### How to examine the loading scores to determine what variables have the largest effect on the graph
@@ -536,6 +539,7 @@ pca$rotation[top_25_genes2,2]
 
 ### Using plotPCA from DESeq2 package
 #### Use top 5000 genes (selected variable genes to do PCA is better)
+class(rld)
 pca_data <- plotPCA(rld, intgroup = c('celltype'), returnData = T, ntop = 5000)    # loading for each principal component (compared with novel analysis with the same important loadings with novel transcripts)
 percentVar <- round(100 * attr(pca_data, "percentVar"))
 p <- ggplot(pca_data, aes(PC1, PC2, color=celltype))
@@ -578,6 +582,11 @@ res <- cbind(ID, as.data.frame(res))
 res$padj[is.na(res$padj)]<- 1
 res <- res[order(res$padj),]
 res$significance <- (res$padj<0.05)
+##### Please have a look at the 'res' object and to see the mean value of sampleA, sampleB 
+##### and logfoldchange, here I can draw the conclusion that the logfoldchange is based on the comparison
+##### sampleA vs sampleB
+
+
 
 #### Draw MA plot
 plotMA(res[,c(4,5,10)], main = "MAplot")
@@ -605,15 +614,21 @@ plot(logFC,log10(FDR)*(-1),col = ifelse(FDR<=0.01, ifelse(abs(logFC)>=1, 'red', 
 res$change <- as.factor(ifelse(res$padj < 0.05 & abs(res$log2FoldChange) > 2, 
                                ifelse(res$log2FoldChange > 1, 'UP', 'DOWN'), 'NOT'))
 
+
+
 ##### Use biomaRt to convert gene ID of differential expressed genes with very significant p-value
 mart <- useMart('ensembl')
 ensembl <- useDataset('drerio_gene_ensembl', mart)
 listFilters(ensembl)
-signifiant_genes <- getBM(attribute=c('ensembl_gene_id', 'entrezgene','zfin_id_symbol'),filters = 'ensembl_gene_id', values= row.names(subset(res, -log10(padj) > 100)),mart = ensembl)
+signifiant_genes <- getBM(attribute=c('ensembl_gene_id', 'entrezgene','zfin_id_symbol'),filters = 'ensembl_gene_id', 
+                          values= row.names(subset(res, -log10(padj) > 100)),mart = ensembl)
 
 ##### Plot VolcanoPlot
-this_title <- paste('VolcanoPlot of',sampleA, 'vs', sampleB,'\nCutoff for logFC is 1', '\nThe number of upregulated genes is', nrow(res[res$change == 'UP',]),
-                     '\nThe number of downregulated gene is', nrow(res[res$change == 'DOWN',]))
+this_title <- paste('VolcanoPlot of',sampleA, 'vs', sampleB,'\nCutoff for logFC is 1', 
+                    '\nThe number of upregulated genes is', 
+                    nrow(res[res$change == 'UP',]),'\nThe number of downregulated gene is', 
+                    nrow(res[res$change == 'DOWN',]))
+
 ggplot(data = res, aes(x=log2FoldChange, y = -log10(padj), color = change, alpha = 0.5)) +
   geom_point()+
   scale_color_manual(values = c('blue','black', 'red')) +
@@ -623,7 +638,7 @@ ggplot(data = res, aes(x=log2FoldChange, y = -log10(padj), color = change, alpha
   theme(panel.border = element_blank(),panel.grid.major = element_blank(), panel.grid.minor = element_blank(), axis.line = element_line(colour = 'black'))+
   labs(title= this_title, x= 'log2(fold change)', y = '-log10(padj)')+
   theme(plot.title = element_text(hjust = 0.5))+
-  geom_text_repel(data=subset(res, -log10(padj) > 100), aes(label=signifiant_genes$zfin_id_symbol), col= 'black')
+  geom_text_repel(data=subset(res, -log10(padj) > 100), aes(label= ID), col= 'black')
 
 
 
@@ -911,14 +926,14 @@ summary(datExpr1)
 p <- ggplot(datExpr1, aes(x = log2_mean, y = log2_CV))+ geom_point() + 
   geom_smooth(span = 0.8, method = 'loess', na.rm = T) + 
   geom_smooth(method = lm, col = 'red', na.rm = T) + 
-  ylim(c(0,10)) +
+  ylim(c(0,2.8)) +
   xlim(0,10) +
   geom_vline(xintercept = c(0,0.1), col = 'darkgreen', lty = 2) +
   theme_classic();  p
 
 model_xlog2mean_ylog2CV <- loess(datExpr1$log2_CV ~ datExpr1$log2_mean, span = 0.8, method = 'loess')
 prediction <- predict(object = model_xlog2mean_ylog2CV, data.frame(datExpr1$log2_mean), se = T)
-datExpr0 <- datExpr1[datExpr1$log2_CV > prediction$fit & datExpr1$log2_mean > 2,1:20]; dim(datExpr0) 
+datExpr0 <- datExpr1[datExpr1$log2_CV > (prediction$fit + 2*prediction$se.fit) & datExpr1$log2_mean > 2.5,1:20]; dim(datExpr0) 
 
 
 
@@ -936,7 +951,7 @@ head(pearson_cor); dim(pearson_cor)
 hc <- hcluster(t(datExpr0), method="pearson")
 hmcol <- colorRampPalette(brewer.pal(9, "GnBu"))(100)
 heatmap.2(pearson_cor, Rowv = as.dendrogram(hc), trace = 'none',symm = T, col = hmcol, main = 'The pearson correlation of each')
-pheatmap(pearson_cor)
+pheatmap(pearson_cor, cutree_rows = 4, cutree_cols = 4)
 
 
 
@@ -1003,7 +1018,7 @@ MEDiss <- 1-cor(MEs)
 METree <- hclust(as.dist(MEDiss), method = 'average')
 par(mfrow = c(1,1))
 plot(METree, main = 'Clustering of module eigengene', xlab = '', sub = '')
-MEDissThres = 0.3 # set the threshold to make some branches together
+MEDissThres = 0.58 # set the threshold to make some branches together
 abline(h = MEDissThres, col = 'red')
 Merge <- mergeCloseModules(t(datExpr0), dynamicColors, cutHeight = MEDissThres, verbose = 3)
 mergedColors <- Merge$colors
@@ -1113,7 +1128,7 @@ beta_genes <- beta_genes[!is.na(beta_genes$entrezgene),]
 
 #### The input for enrichment analysis is entrezgene id 
 beta_genes <- unique(beta_genes$entrezgene)
-
+length(beta_genes)
 
 #### Biological Process
 ##### Calculate 'BP' GO 
@@ -1134,7 +1149,7 @@ cnetplot(result_BP)
 cnetplot(result_BP, circular = T)
 
 #### Molecular Function
-MF <- enrichGO(beta_genes,'org.Dr.eg.db',pvalueCutoff = 0.05, pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'MF', readable = readable)
+MF <- enrichGO(beta_genes,'org.Dr.eg.db',pvalueCutoff = 0.1, pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'MF', readable = readable)
 result_MF <- simplify(MF,cutoff = 0.7, by = 'p.adjust', select_fun = min)
 result_MF
 dotplot(result_MF,showCategory = 10)+scale_size(range = c(2,15))+ggplot2::xlim(NA, 0.04)+scale_color_continuous(low = 'purple', high = 'green') 
@@ -1150,12 +1165,16 @@ barplot(result_CC,drop = T, showCategory = 10)
 plotGOgraph(result_CC)
 goplot(result_CC)
 #### KEGG pathway
-kk <- enrichKEGG(beta_genes,organism = 'dre',keyType = 'kegg',pvalueCutoff = 0.4,pAdjustMethod = 'BH',qvalueCutoff = 0.5)
+kk <- enrichKEGG(beta_genes,organism = 'dre',keyType = 'kegg',pvalueCutoff = 0.4,pAdjustMethod = 'BH',qvalueCutoff = 0.2)
 result_kk <- setReadable(kk,'org.Dr.eg.db',keytype = 'ENTREZID')
 result_kk
 dotplot(result_kk)+scale_size(range = c(2,15))+ggplot2::xlim(NA,0.085)
 cnetplot(result_kk,categorySize = 'aa$geneNum', showCategory = 5)
-
+#### ReactomePA
+pa <- enrichPathway(beta_genes,organism = 'zebrafish',pvalueCutoff = 0.05 ,pAdjustMethod = 'BH',qvalueCutoff = 0.2, readable = T)
+summary(pa)
+plot(pa)
+?enrichPathway
 
 ############################### beta cell with "greenyellow" and "brown" two modules ################################
 
@@ -1246,7 +1265,8 @@ result_kk <- setReadable(kk,'org.Dr.eg.db',keytype = 'ENTREZID')
 result_kk
 dotplot(result_kk)+scale_size(range = c(2,15))+ggplot2::xlim(NA,0.085)
 cnetplot(result_kk,categorySize = 'aa$geneNum', showCategory = 5)
-
+#### ReactomePA
+pa <- enrichPathway(beta_genes,organism = 'zebrafish',pvalueCutoff = 0.05 ,pAdjustMethod = 'BH',qvalueCutoff = 0.2, readable = T)
 
 
 
@@ -1324,15 +1344,19 @@ result_kk
 dotplot(result_kk)+scale_size(range = c(2,15))+ggplot2::xlim(NA,0.12)
 barplot(result_kk,drop = T, showCategory = 10)
 cnetplot(result_kk,categorySize = 'aa$geneNum', showCategory = 5)
-
-
+#### ReactomePA
+pa <- enrichPathway(alpha_genes,organism = 'zebrafish',pvalueCutoff = 0.05 ,pAdjustMethod = 'BH',qvalueCutoff = 0.2, readable = T)
+summary(pa)
+result_pa <- setReadable(pa,'org.Dr.eg.db',keytype = 'ENTREZID')
+result_pa
+dotplot(result_pa)+scale_size(range = c(2,15))+ggplot2::xlim(NA,0.12)
 
 
 ############################### delta cell ##################################
 # 也可以指定感兴趣的模块进行分析，每一个module都分配了一个color
 # 比如对module = 'red’ 的模块进行分析
 # 'red' module gene
-module <- c('red')
+module <- c('brown')
 column <- match(module, modNames)
 moduleGenes <- moduleColors == module
 head(moduleGenes)
@@ -1399,7 +1423,12 @@ result_kk
 dotplot(result_kk)+scale_size(range = c(2,15))+ggplot2::xlim(NA,0.135)
 barplot(result_kk,drop = T, showCategory = 10)
 cnetplot(result_kk,categorySize = 'aa$geneNum', showCategory = 5)
-
+#### ReactomePA
+pa <- enrichPathway(delta_genes,organism = 'zebrafish',pvalueCutoff = 0.05 ,pAdjustMethod = 'BH',qvalueCutoff = 0.2, readable = T)
+summary(pa)
+result_pa <- setReadable(pa,'org.Dr.eg.db',keytype = 'ENTREZID')
+result_pa
+dotplot(result_pa)+scale_size(range = c(2,15))+ggplot2::xlim(NA,0.12)
 
 
 ############################### acinal cell ##################################
@@ -1472,7 +1501,12 @@ result_kk
 dotplot(result_kk)+scale_size(range = c(2,15))+ggplot2::xlim(NA,0.135)
 barplot(result_kk,drop = T, showCategory = 10)
 cnetplot(result_kk,categorySize = 'aa$geneNum', showCategory = 5)
-
+#### ReactomePA
+pa <- enrichPathway(acinal_genes,organism = 'zebrafish',pvalueCutoff = 0.05 ,pAdjustMethod = 'BH',qvalueCutoff = 0.2, readable = T)
+summary(pa)
+result_pa <- setReadable(pa,'org.Dr.eg.db',keytype = 'ENTREZID')
+result_pa
+dotplot(result_pa)+scale_size(range = c(2,15))+ggplot2::xlim(NA,0.12)
 
 
 
