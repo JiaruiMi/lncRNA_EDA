@@ -1587,3 +1587,31 @@ result_pa <- setReadable(pa,'org.Dr.eg.db',keytype = 'ENTREZID')
 result_pa
 dotplot(result_pa)+scale_size(range = c(2,15))+ggplot2::xlim(NA,0.21)+scale_color_continuous(low = 'purple', high = 'green') 
 
+
+########################### Exporting to Cytoscape all one by one ##########################
+## Reset workding directory to export the node and edge data
+setwd('/Users/mijiarui/R_bioinformatics_project/Master_thesis_project/lncRNA_data/WGCNA/WGCNA/WGCNA')
+## Select each module
+for (mod in 1:nrow(table(moduleColors)))
+{
+  
+  modules = names(table(moduleColors))[mod]
+  # Select module probes
+  probes = colnames(t(datExpr0))
+  inModule = (moduleColors == modules)
+  modProbes = probes[inModule]
+  modGenes = modProbes
+  # Select the corresponding Topological Overlap
+  modTOM = TOM[inModule, inModule]
+  
+  dimnames(modTOM) = list(modProbes, modProbes)
+  # Export the network into edge and node list files Cytoscape can read
+  cyt = exportNetworkToCytoscape(modTOM,
+                                 edgeFile = paste("CytoscapeInput-TPM-edges-", modules , ".txt", sep=""),
+                                 nodeFile = paste("CytoscapeInput-TPM-nodes-", modules, ".txt", sep=""),
+                                 weighted = TRUE,
+                                 threshold = 0.02,
+                                 nodeNames = modProbes,
+                                 altNodeNames = modGenes,
+                                 nodeAttr = moduleColors[inModule])
+}
