@@ -897,7 +897,7 @@ beta_vs_alpha_delta_markerGenes <- beta_vs_alpha_delta_markerGenes[!beta_vs_alph
 #
 #========================================================================================================
 library(WGCNA)
-norm_counts <- normalized_counts[,1:20]
+norm_counts <- normalized_counts[,1:20] # only consider four types of cell (omit ductal cells since with no replicates)
 datExpr0 <- as.data.frame(t(norm_counts)); dim(datExpr0)
 
 gsg <- goodSamplesGenes(datExpr0, verbose = 3)
@@ -922,19 +922,24 @@ datExpr1 <- as.data.frame(t(datExpr0))
 names(datExpr1)[21] <- 'log2_mean';names(datExpr1)[22] <- 'log2_CV'; names(datExpr1)
 head(datExpr1)[21]; head(datExpr1[22]); colnames(datExpr1)
 summary(datExpr1)
+head(datExpr1)
 
-p <- ggplot(datExpr1, aes(x = log2_mean, y = log2_CV))+ geom_point() + 
-  geom_smooth(span = 0.8, method = 'loess', na.rm = T) + 
-  geom_smooth(method = lm, col = 'red', na.rm = T) + 
-  ylim(c(0,2.8)) +
-  xlim(0,10) +
-  geom_vline(xintercept = 5, col = 'darkgreen', lty = 2) +
-  theme_classic();  p
 
 model_xlog2mean_ylog2CV <- loess(datExpr1$log2_CV ~ datExpr1$log2_mean, span = 0.8, method = 'loess')
 prediction <- predict(object = model_xlog2mean_ylog2CV, data.frame(datExpr1$log2_mean), se = T)
 datExpr0 <- datExpr1[datExpr1$log2_CV > (prediction$fit + 2*prediction$se.fit) & datExpr1$log2_mean > 5,1:20]; dim(datExpr0) 
 
+
+p <- ggplot(datExpr1, aes(x = log2_mean, y = log2_CV), col = 'black')+ geom_point() + 
+  geom_smooth(span = 0.8, method = 'loess', na.rm = T) + 
+  geom_smooth(method = lm, col = 'red', na.rm = T) + 
+  ylim(c(0,2.8)) +
+  xlim(0,10) +
+  geom_vline(xintercept = 5, col = 'darkgreen', lty = 2) +
+  theme_classic() +
+  labs(x = 'Mean of Normalized counts (log2-transformed)', y = 'Coefficient of variance (log2-transformed)') +
+  theme(axis.title = element_text(size = 18), axis.text = element_text(size = 16)) +
+  geom_point(data = datExpr1[datExpr1$log2_CV > (prediction$fit + 2*prediction$se.fit) & datExpr1$log2_mean > 5,21:22],col = 'red');  p
 
 
 filtered_TPM_normalized_counts <- datExpr0
@@ -1051,7 +1056,7 @@ labeledHeatmap(Matrix = moduleTraitCor,
                colors = blueWhiteRed(50),
                textMatrix = textMatrix,
                setStdMargins = F,
-               cex.text = 0.8,
+               cex.text = 1,
                zlim <- c(-1,1),
                main = paste('Module-trait relationships'))
 
@@ -1128,7 +1133,7 @@ beta_genes <- beta_genes[!is.na(beta_genes$entrezgene),]
 
 #### The input for enrichment analysis is entrezgene id 
 beta_genes <- unique(beta_genes$entrezgene)
-length(beta_genes)
+length(beta_genes);
 
 #### Biological Process
 ##### Calculate 'BP' GO 
