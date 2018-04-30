@@ -1047,7 +1047,7 @@ moduleTraitPvalue <- corPvalueStudent(moduleTraitCor, nSample)
 textMatrix = paste(signif(moduleTraitCor,2),"\n(", signif(moduleTraitPvalue,1),")", sep = "")
 dim(textMatrix) <- dim(moduleTraitCor)
 par(mfrow = c(1,1))
-par(mar = c(3,8,2,2))
+par(mar = c(3,8.5,2,2))
 labeledHeatmap(Matrix = moduleTraitCor,
                xLabels = names(traitData),
                yLabels = names(MEs),
@@ -1056,10 +1056,11 @@ labeledHeatmap(Matrix = moduleTraitCor,
                colors = blueWhiteRed(50),
                textMatrix = textMatrix,
                setStdMargins = F,
-               cex.text = 1,
+               cex.text = 1.25,
+               cex.lab = 1.25,
                zlim <- c(-1,1),
                main = paste('Module-trait relationships'))
-
+?labeledHeatmap
 
 
 nSelect <- 800
@@ -1070,7 +1071,8 @@ selectTree <- hclust(as.dist(selectTOM), method = 'average')
 selectColors <- moduleColors[select]
 plotDiss <- selectTOM^8
 diag(plotDiss) <- NA
-TOMplot(plotDiss, selectTree, selectColors, main = 'Network heatmap plot, randomly select 800 genes')
+TOMplot(plotDiss, selectTree, selectColors)
+?TOMplot
 
 ###################### Visualizing the gene network of eigengene ###################
 par(cex = 0.9)
@@ -1620,3 +1622,1788 @@ for (mod in 1:nrow(table(moduleColors)))
                                  altNodeNames = modGenes,
                                  nodeAttr = moduleColors[inModule])
 }
+
+
+
+
+
+#===================================================================================================
+#
+#                          Differential expressed annotated antisense lncRNA
+#
+#===================================================================================================
+setwd('/Users/mijiarui/R_bioinformatics_project/Master_thesis_project/lncRNA_EDA')
+reads <- read.csv('counts_total.csv', header = T, row.names = 1)
+reads[1:3,1:3];dim(reads)
+reads <- reads[,2:15]
+## In total, 23 samples with 32266 genes detected
+
+## Read in Coldata(Phenodata)
+sample <- read.csv('SampleGroup_endocrine.csv', header = T, row.names = 1, colClasses = 'factor')
+sample
+
+## Read in metadata of lincRNA and antisense (lncRNA)
+setwd("/Users/mijiarui/RNA-seq/CAGE")
+lincRNA <- read.table(file = "annotated.lincRNA.bed.txt", header = F, sep = '\t', quote = "")
+colnames(lincRNA) <- c('chr', 'start', 'end', 'ensembl', 'geneid', 'strand')
+row.names(lincRNA) <- lincRNA$ensembl
+head(lincRNA); dim(lincRNA)
+antisense <- read.table(file = "annotated.antisense.bed.txt", header = F, sep = '\t', quote = "")
+colnames(antisense) <- c('chr', 'start', 'end', 'ensembl', 'geneid', 'strand')
+row.names(antisense) <- antisense$ensembl
+head(antisense); dim(antisense)
+
+### expression matrix of lincRNA and antisense (lncRNA)
+lincRNA_exprs <- reads[row.names(reads) %in% row.names(lincRNA),]
+head(lincRNA_exprs); dim(lincRNA_exprs)
+
+antisense_exprs <- reads[row.names(reads) %in% row.names(antisense),]
+head(antisense_exprs); dim(antisense_exprs)
+
+
+
+# Make DESeq object and Do the normalization (size factor)
+## Create DESeqDataSet
+ddsFullCountTable <- DESeqDataSetFromMatrix(countData = antisense_exprs, colData = sample, design  = ~ celltype)
+
+## Calculation and Normalization: get normalized_counts
+dds <- DESeq(ddsFullCountTable)
+normalized_counts <- counts(dds, normalized= T)
+class(normalized_counts); head(normalized_counts)
+
+## Sort according to mad
+normalized_counts_mad <- apply(normalized_counts, 1, mad)
+normalized_counts < normalized_counts[order(normalized_counts_mad, decreasing = T),]
+## Log transformation
+rld <- rlog(dds, blind = F) # This step takes some time, we do not put '+1' here
+rlogMat <- assay(rld)
+rlogMat <- rlogMat[order(normalized_counts_mad, decreasing = T),]
+
+
+
+## Hierarchical clustering
+### Selecting colors
+display.brewer.all(type = 'all') 
+hmcol <- colorRampPalette(brewer.pal(9, "GnBu"))(100)
+### Calculating the pearson correlation matrix
+#### Clustering is based on the relationship among each individual sample. Both distance and correlation
+#### are accepted but correlation is preferred. The distance methods and correlation methods are chosen 
+#### based on your data.
+pearson_cor <- as.matrix(cor(rlogMat, method = 'pearson'))
+head(pearson_cor); dim(pearson_cor)
+hc <- hcluster(t(rlogMat), method="pearson")
+#### Here I use 'heatmap.2' function from 'gplots' package.
+heatmap.2(pearson_cor, Rowv = as.dendrogram(hc), trace = 'none',symm = T, col = hmcol, main = 'The pearson correlation of each')
+pheatmap(pearson_cor)
+
+
+
+#======================================================================================
+#             Beta-cell vs alpha-cell and Beta-cell vs delta-cell
+#======================================================================================
+
+################### Perform differential gene expression ################
+############### Differential Gene Expression #################
+sampleA <- 'beta'
+sampleB <- 'acinal'
+sampleC <- 'alpha'
+sampleD <- 'delta'
+
+
+### Differential gene expression between sampleA (beta-cell) and sampleC (alpha-cell)
+#### Comparison between sampleA and sampleC
+contrastV <- c('celltype', sampleA, sampleC)
+res <- results(dds, contrast = contrastV)
+head(res)
+
+
+#### Calculate the mean value of gene expression in sampleA 
+baseA <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleA]
+baseMeanA <- as.data.frame(rowMeans(baseA, na.rm = T))
+colnames(baseMeanA) <- sampleA
+
+
+#### Calculate the mean value of gene expression in sampleC 
+baseC <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleC]
+baseMeanC <- as.data.frame(rowMeans(baseC, na.rm = T))
+colnames(baseMeanC) <- sampleC
+
+#### Prepare the res table of differential gene expression between sampleA and sampleC
+res <- cbind(baseMeanA, baseMeanC, as.data.frame(res))
+ID <- rownames(res)
+res <- cbind(ID, as.data.frame(res))
+res$padj[is.na(res$padj)]<- 1
+res <- res[order(res$padj),]
+res$significance <- (res$padj<0.05)
+
+
+
+#### Extract differential expressed gene
+res_de <- subset(res, res$padj<0.1, select=c('ID',sampleA,sampleC,'log2FoldChange','padj'))
+res_de_up <- subset(res_de,res_de$log2FoldChange>=1)
+res_de_down <- subset(res_de,res_de$log2FoldChange<=-1)
+
+
+signifiant_genes_beta_vs_alpha <- row.names(subset(res, padj < 0.05 & res$log2FoldChange > 1 ))
+
+length(signifiant_genes_beta_vs_alpha)
+
+
+### Differential gene expression between sampleA (beta-cell) and sampleD (delta-cell)
+#### Comparison between sampleA and sampleD
+contrastV <- c('celltype', sampleA, sampleD)
+res <- results(dds, contrast = contrastV)
+head(res)
+
+
+#### Calculate the mean value of gene expression in sampleA 
+baseA <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleA]
+baseMeanA <- as.data.frame(rowMeans(baseA, na.rm = T))
+colnames(baseMeanA) <- sampleA
+
+
+#### Calculate the mean value of gene expression in sampleC 
+baseD <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleD]
+baseMeanD <- as.data.frame(rowMeans(baseD, na.rm = T))
+colnames(baseMeanD) <- sampleD
+
+#### Prepare the res table of differential gene expression between sampleA and sampleC
+res <- cbind(baseMeanA, baseMeanD, as.data.frame(res))
+ID <- rownames(res)
+res <- cbind(ID, as.data.frame(res))
+res$padj[is.na(res$padj)]<- 1
+res <- res[order(res$padj),]
+res$significance <- (res$padj<0.05)
+
+
+#### Extract differential expressed gene
+colnames(res)
+res_de <- subset(res, res$padj<0.1, select=c('ID',sampleA,sampleD,'log2FoldChange','padj'))
+res_de_up <- subset(res_de,res_de$log2FoldChange>=1)
+res_de_down <- subset(res_de,res_de$log2FoldChange<=-1)
+
+
+signifiant_genes_beta_vs_delta <- row.names(subset(res, padj < 0.05 & res$log2FoldChange > 1))
+
+length(signifiant_genes_beta_vs_delta)
+
+
+#### Pick up the lincRNAs that are differentially expressed in between beta-cell and alpha-cell and
+#### between beta-cell and delta-cell
+b <- signifiant_genes_beta_vs_delta[signifiant_genes_beta_vs_delta %in% signifiant_genes_beta_vs_alpha]
+length(b)
+
+coordinate_b_antisense <- antisense[antisense$ensembl %in% b,]
+coordinate_b_antisense
+
+
+coordinate_b_antisense$chr <- as.numeric(sub("chr","",coordinate_b_antisense$chr))
+
+
+library(biomaRt)
+library(clusterProfiler)
+readable = T
+mart <- useMart('ensembl')
+ensembl <- useDataset('drerio_gene_ensembl', mart) ## # select dataset "drerio_gene_ensembl"
+for (i in 1:nrow(coordinate_b_antisense)){
+  coordinate_b_antisense$flanking[i] <- getBM(attributes = 'entrezgene', filters = c('chromosome_name','start','end'),
+                                    values= list(coordinate_b_antisense$chr[i],coordinate_b_antisense$start[i]-200000,coordinate_b_antisense$end[i]+200000), 
+                                    mart=ensembl)
+}
+entrez <- as.vector(unlist(coordinate_b_antisense$flanking))
+GO <- enrichGO(entrez,'org.Dr.eg.db',pvalueCutoff = 0.2,
+               pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'BP', readable = readable)
+GO
+dotplot(GO)
+cnetplot(GO)
+
+
+
+
+
+#======================================================================================
+#             alpha-cell vs beta-cell and alpha-cell vs delta-cell
+#======================================================================================
+
+### Differential gene expression between sampleC (alpha-cell) and sampleA (beta-cell)
+#### Comparison between sampleA and sampleC
+contrastV <- c('celltype', sampleC, sampleA)
+res <- results(dds, contrast = contrastV)
+head(res)
+
+
+#### Calculate the mean value of gene expression in sampleA 
+baseC <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleC]
+baseMeanC <- as.data.frame(rowMeans(baseC, na.rm = T))
+colnames(baseMeanC) <- sampleC
+
+
+#### Calculate the mean value of gene expression in sampleC 
+baseA <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleA]
+baseMeanA <- as.data.frame(rowMeans(baseA, na.rm = T))
+colnames(baseMeanA) <- sampleA
+
+#### Prepare the res table of differential gene expression between sampleA and sampleC
+res <- cbind(baseMeanC, baseMeanA, as.data.frame(res))
+ID <- rownames(res)
+res <- cbind(ID, as.data.frame(res))
+res$padj[is.na(res$padj)]<- 1
+res <- res[order(res$padj),]
+res$significance <- (res$padj<0.05)
+
+
+#### Extract differential expressed gene
+res_de <- subset(res, res$padj<0.1, select=c('ID',sampleC,sampleA,'log2FoldChange','padj'))
+res_de_up <- subset(res_de,res_de$log2FoldChange>=1)
+res_de_down <- subset(res_de,res_de$log2FoldChange<=-1)
+
+
+
+signifiant_genes_alpha_vs_beta <- row.names(subset(res, padj < 0.05 & res$log2FoldChange > 1))
+
+length(signifiant_genes_alpha_vs_beta)
+
+
+
+
+
+### Differential gene expression between sampleA (beta-cell) and sampleD (delta-cell)
+#### Comparison between sampleA and sampleD
+contrastV <- c('celltype', sampleC, sampleD)
+res <- results(dds, contrast = contrastV)
+head(res)
+
+
+#### Calculate the mean value of gene expression in sampleA 
+baseC <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleC]
+baseMeanC <- as.data.frame(rowMeans(baseC, na.rm = T))
+colnames(baseMeanC) <- sampleC
+
+
+#### Calculate the mean value of gene expression in sampleC 
+baseD <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleD]
+baseMeanD <- as.data.frame(rowMeans(baseD, na.rm = T))
+colnames(baseMeanD) <- sampleD
+
+#### Prepare the res table of differential gene expression between sampleA and sampleC
+res <- cbind(baseMeanC, baseMeanD, as.data.frame(res))
+ID <- rownames(res)
+res <- cbind(ID, as.data.frame(res))
+res$padj[is.na(res$padj)]<- 1
+res <- res[order(res$padj),]
+res$significance <- (res$padj<0.05)
+
+
+#### Extract differential expressed gene
+res_de <- subset(res, res$padj<0.1, select=c('ID',sampleC,sampleD,'log2FoldChange','padj'))
+res_de_up <- subset(res_de,res_de$log2FoldChange>=1)
+res_de_down <- subset(res_de,res_de$log2FoldChange<=-1)
+
+
+
+signifiant_genes_alpha_vs_delta <- row.names(subset(res, padj < 0.05 & res$log2FoldChange > 1))
+
+length(signifiant_genes_alpha_vs_delta)
+
+
+#### Pick up the lincRNAs that are differentially expressed in between beta-cell and alpha-cell and
+#### between beta-cell and delta-cell
+a <- signifiant_genes_alpha_vs_delta[signifiant_genes_alpha_vs_delta %in% signifiant_genes_alpha_vs_beta]
+length(a)
+
+coordinate_a_antisense <- antisense[antisense$ensembl %in% a,]
+coordinate_a_antisense
+
+
+coordinate_a_antisense$chr <- as.numeric(sub("chr","",coordinate_a_antisense$chr))
+
+
+library(biomaRt)
+library(clusterProfiler)
+readable = T
+mart <- useMart('ensembl')
+ensembl <- useDataset('drerio_gene_ensembl', mart) ## # select dataset "drerio_gene_ensembl"
+for (i in 1:nrow(coordinate_a_antisense)){
+  coordinate_a_antisense$flanking[i] <- getBM(attributes = 'entrezgene', filters = c('chromosome_name','start','end'),
+                                    values= list(coordinate_a_antisense$chr[i],coordinate_a_antisense$start[i]-500000,coordinate_a_antisense$end[i]+500000), 
+                                    mart=ensembl)
+}
+entrez <- as.vector(unlist(coordinate_a_antisense$flanking))
+GO <- enrichGO(entrez,'org.Dr.eg.db',pvalueCutoff = 0.2,
+               pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'BP', readable = readable)
+GO
+dotplot(GO)
+cnetplot(GO)
+
+
+
+#======================================================================================
+#             delta-cell vs beta-cell and delta-cell vs alpha-cell
+#======================================================================================
+
+### Differential gene expression between sampleD (delta-cell) and sampleA (beta-cell)
+#### Comparison between sampleA and sampleC
+contrastV <- c('celltype', sampleD, sampleA)
+res <- results(dds, contrast = contrastV)
+head(res)
+
+
+#### Calculate the mean value of gene expression in sampleA 
+baseD <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleD]
+baseMeanD <- as.data.frame(rowMeans(baseD, na.rm = T))
+colnames(baseMeanD) <- sampleD
+
+
+#### Calculate the mean value of gene expression in sampleC 
+baseA <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleA]
+baseMeanA <- as.data.frame(rowMeans(baseA, na.rm = T))
+colnames(baseMeanA) <- sampleA
+
+#### Prepare the res table of differential gene expression between sampleA and sampleC
+res <- cbind(baseMeanD, baseMeanA, as.data.frame(res))
+ID <- rownames(res)
+res <- cbind(ID, as.data.frame(res))
+res$padj[is.na(res$padj)]<- 1
+res <- res[order(res$padj),]
+res$significance <- (res$padj<0.05)
+
+
+
+#### Extract differential expressed gene
+res_de <- subset(res, res$padj<0.1, select=c('ID',sampleD,sampleA,'log2FoldChange','padj'))
+res_de_up <- subset(res_de,res_de$log2FoldChange>=1)
+res_de_down <- subset(res_de,res_de$log2FoldChange<=-1)
+
+
+
+signifiant_genes_delta_vs_beta <- row.names(subset(res, padj < 0.05 & res$log2FoldChange > 1))
+
+length(signifiant_genes_delta_vs_beta)
+
+
+### Differential gene expression between sampleD (delta-cell) and sampleC (alpha-cell)
+#### Comparison between sampleA and sampleD
+contrastV <- c('celltype', sampleD, sampleC)
+res <- results(dds, contrast = contrastV)
+head(res)
+
+
+#### Calculate the mean value of gene expression in sampleC 
+baseD <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleD]
+baseMeanD <- as.data.frame(rowMeans(baseD, na.rm = T))
+colnames(baseMeanD) <- sampleD
+
+#### Calculate the mean value of gene expression in sampleA 
+baseC <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleC]
+baseMeanC <- as.data.frame(rowMeans(baseC, na.rm = T))
+colnames(baseMeanC) <- sampleC
+
+
+
+#### Prepare the res table of differential gene expression between sampleA and sampleC
+res <- cbind(baseMeanD, baseMeanC, as.data.frame(res))
+ID <- rownames(res)
+res <- cbind(ID, as.data.frame(res))
+res$padj[is.na(res$padj)]<- 1
+res <- res[order(res$padj),]
+res$significance <- (res$padj<0.05)
+
+
+
+
+
+#### Extract differential expressed gene
+res_de <- subset(res, res$padj<0.1, select=c('ID',sampleD,sampleC,'log2FoldChange','padj'))
+res_de_up <- subset(res_de,res_de$log2FoldChange>=1)
+res_de_down <- subset(res_de,res_de$log2FoldChange<=-1)
+
+
+
+signifiant_genes_delta_vs_alpha <- row.names(subset(res, padj < 0.05 & res$log2FoldChange > 1 ))
+
+length(signifiant_genes_delta_vs_alpha)
+
+
+#### Pick up the lincRNAs that are differentially expressed in between beta-cell and alpha-cell and
+#### between beta-cell and delta-cell
+d <- signifiant_genes_delta_vs_beta[signifiant_genes_delta_vs_beta %in% signifiant_genes_delta_vs_alpha]
+length(d)
+
+coordinate_d_antisense <- antisense[antisense$ensembl %in% d,]
+coordinate_d_antisense
+
+
+coordinate_d_antisense$chr <- as.numeric(sub("chr","",coordinate_d_antisense$chr))
+
+library(biomaRt)
+library(clusterProfiler)
+readable = T
+mart <- useMart('ensembl')
+ensembl <- useDataset('drerio_gene_ensembl', mart) ## # select dataset "drerio_gene_ensembl"
+for (i in 1:nrow(coordinate_d_antisense)){
+  coordinate_d_antisense$flanking[i] <- getBM(attributes = 'entrezgene', filters = c('chromosome_name','start','end'),
+                                      values= list(coordinate_d_antisense$chr[i],coordinate_d_antisense$start[i]-500000,coordinate_d_antisense$end[i]+500000), 
+                                      mart=ensembl)
+}
+entrez <- as.vector(unlist(coordinate_d_antisense$flanking))
+GO <- enrichGO(entrez,'org.Dr.eg.db',pvalueCutoff = 0.2,
+               pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'BP', readable = readable)
+GO
+dotplot(GO)
+cnetplot(GO)
+
+abd_ensembl <- c(a,b,d)
+
+pheatmap(rlogMat[rownames(rlogMat) %in% abd_ensembl,], color = colorRampPalette(c('navy', 'white', 'firebrick3'))(50), 
+         cluster_rows = T, scale = 'row', cluster_cols = T, annotation_col = sample)
+
+
+
+
+#======================================================================================
+#             alpha-cell vs beta-cell and delta-cell vs beta-cell
+#======================================================================================
+### Differential gene expression between sampleC (alpha-cell) and sampleA (beta-cell)
+#### Comparison between sampleA and sampleC
+contrastV <- c('celltype', sampleC, sampleA)
+res <- results(dds, contrast = contrastV)
+head(res)
+
+
+#### Calculate the mean value of gene expression in sampleA 
+baseC <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleC]
+baseMeanC <- as.data.frame(rowMeans(baseC, na.rm = T))
+colnames(baseMeanC) <- sampleC
+
+
+#### Calculate the mean value of gene expression in sampleC 
+baseA <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleA]
+baseMeanA <- as.data.frame(rowMeans(baseA, na.rm = T))
+colnames(baseMeanA) <- sampleA
+
+#### Prepare the res table of differential gene expression between sampleA and sampleC
+res <- cbind(baseMeanC, baseMeanA, as.data.frame(res))
+ID <- rownames(res)
+res <- cbind(ID, as.data.frame(res))
+res$padj[is.na(res$padj)]<- 1
+res <- res[order(res$padj),]
+res$significance <- (res$padj<0.05)
+
+
+#### Extract differential expressed gene
+res_de <- subset(res, res$padj<0.1, select=c('ID',sampleC,sampleA,'log2FoldChange','padj'))
+res_de_up <- subset(res_de,res_de$log2FoldChange>=1)
+res_de_down <- subset(res_de,res_de$log2FoldChange<=-1)
+
+
+
+signifiant_genes_alpha_vs_beta <- row.names(subset(res, padj < 0.01 & res$log2FoldChange > 2))
+
+length(signifiant_genes_alpha_vs_beta)
+
+
+### Differential gene expression between sampleD (delta-cell) and sampleA (beta-cell)
+#### Comparison between sampleA and sampleC
+contrastV <- c('celltype', sampleD, sampleA)
+res <- results(dds, contrast = contrastV)
+head(res)
+
+
+#### Calculate the mean value of gene expression in sampleA 
+baseD <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleD]
+baseMeanD <- as.data.frame(rowMeans(baseD, na.rm = T))
+colnames(baseMeanD) <- sampleD
+
+
+#### Calculate the mean value of gene expression in sampleC 
+baseA <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleA]
+baseMeanA <- as.data.frame(rowMeans(baseA, na.rm = T))
+colnames(baseMeanA) <- sampleA
+
+#### Prepare the res table of differential gene expression between sampleA and sampleC
+res <- cbind(baseMeanD, baseMeanA, as.data.frame(res))
+ID <- rownames(res)
+res <- cbind(ID, as.data.frame(res))
+res$padj[is.na(res$padj)]<- 1
+res <- res[order(res$padj),]
+res$significance <- (res$padj<0.05)
+
+
+
+#### Extract differential expressed gene
+res_de <- subset(res, res$padj<0.1, select=c('ID',sampleD,sampleA,'log2FoldChange','padj'))
+res_de_up <- subset(res_de,res_de$log2FoldChange>=1)
+res_de_down <- subset(res_de,res_de$log2FoldChange<=-1)
+
+
+
+signifiant_genes_delta_vs_beta <- row.names(subset(res, padj < 0.01 & res$log2FoldChange > 1))
+
+length(signifiant_genes_delta_vs_beta)
+
+
+#### Pick up the lincRNAs that are differentially expressed in between beta-cell and alpha-cell and
+#### between beta-cell and delta-cell
+b <- signifiant_genes_alpha_vs_beta[signifiant_genes_alpha_vs_beta %in% signifiant_genes_delta_vs_beta]
+length(b)
+
+coordinate_b <- antisense[antisense$ensembl %in% b,]
+coordinate_b
+
+
+coordinate_b$chr <- as.numeric(sub("chr","",coordinate_b$chr))
+
+
+for (i in 1:nrow(coordinate_b)){
+  coordinate_b$flanking[i] <- getBM(attributes = 'entrezgene', filters = c('chromosome_name','start','end'),
+                                    values= list(coordinate_b$chr[i],coordinate_b$start[i]-100000,coordinate_b$end[i]+100000), 
+                                    mart=ensembl)
+}
+entrez <- as.vector(unlist(coordinate_b$flanking))
+GO <- enrichGO(entrez,'org.Dr.eg.db',pvalueCutoff = 0.2,
+               pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'BP', readable = readable)
+GO
+dotplot(GO)
+cnetplot(GO)
+
+
+#======================================================================================
+#             beta-cell vs alpha-cell and delta-cell vs alpha-cell
+#======================================================================================
+### Differential gene expression between sampleA (beta-cell) and sampleC (alpha-cell)
+#### Comparison between sampleA and sampleC
+contrastV <- c('celltype', sampleA, sampleC)
+res <- results(dds, contrast = contrastV)
+head(res)
+
+
+#### Calculate the mean value of gene expression in sampleA 
+baseA <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleA]
+baseMeanA <- as.data.frame(rowMeans(baseA, na.rm = T))
+colnames(baseMeanA) <- sampleA
+
+
+#### Calculate the mean value of gene expression in sampleC 
+baseC <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleC]
+baseMeanC <- as.data.frame(rowMeans(baseC, na.rm = T))
+colnames(baseMeanC) <- sampleC
+
+#### Prepare the res table of differential gene expression between sampleA and sampleC
+res <- cbind(baseMeanA, baseMeanC, as.data.frame(res))
+ID <- rownames(res)
+res <- cbind(ID, as.data.frame(res))
+res$padj[is.na(res$padj)]<- 1
+res <- res[order(res$padj),]
+res$significance <- (res$padj<0.05)
+
+
+
+#### Extract differential expressed gene
+res_de <- subset(res, res$padj<0.1, select=c('ID',sampleA,sampleC,'log2FoldChange','padj'))
+res_de_up <- subset(res_de,res_de$log2FoldChange>=1)
+res_de_down <- subset(res_de,res_de$log2FoldChange<=-1)
+
+
+signifiant_genes_beta_vs_alpha <- row.names(subset(res, padj < 0.01 & res$log2FoldChange > 1 ))
+
+length(signifiant_genes_beta_vs_alpha)
+
+### Differential gene expression between sampleD (delta-cell) and sampleC (alpha-cell)
+#### Comparison between sampleA and sampleD
+contrastV <- c('celltype', sampleD, sampleC)
+res <- results(dds, contrast = contrastV)
+head(res)
+
+
+#### Calculate the mean value of gene expression in sampleC 
+baseD <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleD]
+baseMeanD <- as.data.frame(rowMeans(baseD, na.rm = T))
+colnames(baseMeanD) <- sampleD
+
+#### Calculate the mean value of gene expression in sampleA 
+baseC <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleC]
+baseMeanC <- as.data.frame(rowMeans(baseC, na.rm = T))
+colnames(baseMeanC) <- sampleC
+
+
+
+#### Prepare the res table of differential gene expression between sampleA and sampleC
+res <- cbind(baseMeanD, baseMeanC, as.data.frame(res))
+ID <- rownames(res)
+res <- cbind(ID, as.data.frame(res))
+res$padj[is.na(res$padj)]<- 1
+res <- res[order(res$padj),]
+res$significance <- (res$padj<0.05)
+
+
+
+
+
+#### Extract differential expressed gene
+res_de <- subset(res, res$padj<0.1, select=c('ID',sampleD,sampleC,'log2FoldChange','padj'))
+res_de_up <- subset(res_de,res_de$log2FoldChange>=1)
+res_de_down <- subset(res_de,res_de$log2FoldChange<=-1)
+
+
+
+signifiant_genes_delta_vs_alpha <- row.names(subset(res, padj < 0.01 & res$log2FoldChange > 1 ))
+
+length(signifiant_genes_delta_vs_alpha)
+
+
+#### Pick up the lincRNAs that are differentially expressed in between beta-cell and alpha-cell and
+#### between beta-cell and delta-cell
+a <- signifiant_genes_beta_vs_alpha[signifiant_genes_beta_vs_alpha %in% signifiant_genes_delta_vs_alpha]
+length(a)
+
+coordinate_a <- antisense[antisense$ensembl %in% a,]
+coordinate_a
+
+
+coordinate_a$chr <- as.numeric(sub("chr","",coordinate_a$chr))
+
+
+library(biomaRt)
+library(clusterProfiler)
+readable = T
+mart <- useMart('ensembl')
+ensembl <- useDataset('drerio_gene_ensembl', mart) ## # select dataset "drerio_gene_ensembl"
+for (i in 1:nrow(coordinate_a)){
+  coordinate_a$flanking[i] <- getBM(attributes = 'entrezgene', filters = c('chromosome_name','start','end'),
+                                    values= list(coordinate_a$chr[i],coordinate_a$start[i]-100000,coordinate_a$end[i]+100000), 
+                                    mart=ensembl)
+}
+entrez <- as.vector(unlist(coordinate_a$flanking))
+GO <- enrichGO(entrez,'org.Dr.eg.db',pvalueCutoff = 0.2,
+               pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'BP', readable = readable)
+GO
+dotplot(GO)
+cnetplot(GO)
+
+
+#======================================================================================
+#             alpha-cell vs delta-cell and beta-cell vs delta-cell
+#======================================================================================
+### Differential gene expression between sampleA (beta-cell) and sampleD (delta-cell)
+#### Comparison between sampleA and sampleD
+contrastV <- c('celltype', sampleC, sampleD)
+res <- results(dds, contrast = contrastV)
+head(res)
+
+
+#### Calculate the mean value of gene expression in sampleA 
+baseC <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleC]
+baseMeanC <- as.data.frame(rowMeans(baseC, na.rm = T))
+colnames(baseMeanC) <- sampleC
+
+
+#### Calculate the mean value of gene expression in sampleC 
+baseD <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleD]
+baseMeanD <- as.data.frame(rowMeans(baseD, na.rm = T))
+colnames(baseMeanD) <- sampleD
+
+#### Prepare the res table of differential gene expression between sampleA and sampleC
+res <- cbind(baseMeanC, baseMeanD, as.data.frame(res))
+ID <- rownames(res)
+res <- cbind(ID, as.data.frame(res))
+res$padj[is.na(res$padj)]<- 1
+res <- res[order(res$padj),]
+res$significance <- (res$padj<0.05)
+
+
+#### Extract differential expressed gene
+res_de <- subset(res, res$padj<0.1, select=c('ID',sampleC,sampleD,'log2FoldChange','padj'))
+res_de_up <- subset(res_de,res_de$log2FoldChange>=1)
+res_de_down <- subset(res_de,res_de$log2FoldChange<=-1)
+
+
+
+signifiant_genes_alpha_vs_delta <- row.names(subset(res, padj < 0.01 & res$log2FoldChange > 2 ))
+
+length(signifiant_genes_alpha_vs_delta)
+
+### Differential gene expression between sampleA (beta-cell) and sampleD (delta-cell)
+#### Comparison between sampleA and sampleD
+contrastV <- c('celltype', sampleA, sampleD)
+res <- results(dds, contrast = contrastV)
+head(res)
+
+
+#### Calculate the mean value of gene expression in sampleA 
+baseA <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleA]
+baseMeanA <- as.data.frame(rowMeans(baseA, na.rm = T))
+colnames(baseMeanA) <- sampleA
+
+
+#### Calculate the mean value of gene expression in sampleC 
+baseD <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleD]
+baseMeanD <- as.data.frame(rowMeans(baseD, na.rm = T))
+colnames(baseMeanD) <- sampleD
+
+#### Prepare the res table of differential gene expression between sampleA and sampleC
+res <- cbind(baseMeanA, baseMeanD, as.data.frame(res))
+ID <- rownames(res)
+res <- cbind(ID, as.data.frame(res))
+res$padj[is.na(res$padj)]<- 1
+res <- res[order(res$padj),]
+res$significance <- (res$padj<0.05)
+
+
+#### Extract differential expressed gene
+colnames(res)
+res_de <- subset(res, res$padj<0.1, select=c('ID',sampleA,sampleD,'log2FoldChange','padj'))
+res_de_up <- subset(res_de,res_de$log2FoldChange>=1)
+res_de_down <- subset(res_de,res_de$log2FoldChange<=-1)
+
+
+signifiant_genes_beta_vs_delta <- row.names(subset(res, padj < 0.01 & res$log2FoldChange > 1))
+
+length(signifiant_genes_beta_vs_delta)
+
+d <- signifiant_genes_delta_vs_beta[signifiant_genes_delta_vs_beta %in% signifiant_genes_delta_vs_alpha]
+length(d)
+
+for (i in 1:nrow(coordinate_d)){
+  coordinate_b$flanking[i] <- getBM(attributes = 'entrezgene', filters = c('chromosome_name','start','end'),
+                                    values= list(coordinate_d$chr[i],coordinate_d$start[i]-100000,coordinate_d$end[i]+100000), 
+                                    mart=ensembl)
+}
+entrez <- as.vector(unlist(coordinate_d$flanking))
+GO <- enrichGO(entrez,'org.Dr.eg.db',pvalueCutoff = 0.2,
+               pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'BP', readable = readable)
+GO
+dotplot(GO)
+cnetplot(GO)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#===================================================================================================
+#
+#                          Differential expressed annotated lincRNA
+#
+#===================================================================================================
+setwd('/Users/mijiarui/R_bioinformatics_project/Master_thesis_project/lncRNA_EDA')
+reads <- read.csv('counts_total.csv', header = T, row.names = 1)
+reads[1:3,1:3];dim(reads)
+reads <- reads[,2:15]
+## In total, 23 samples with 32266 genes detected
+
+## Read in Coldata(Phenodata)
+sample <- read.csv('SampleGroup_endocrine.csv', header = T, row.names = 1, colClasses = 'factor')
+sample
+
+## Read in metadata of lincRNA and antisense (lncRNA)
+setwd("/Users/mijiarui/RNA-seq/CAGE")
+lincRNA <- read.table(file = "annotated.lincRNA.bed.txt", header = F, sep = '\t', quote = "")
+colnames(lincRNA) <- c('chr', 'start', 'end', 'ensembl', 'geneid', 'strand')
+row.names(lincRNA) <- lincRNA$ensembl
+head(lincRNA); dim(lincRNA)
+antisense <- read.table(file = "annotated.antisense.bed.txt", header = F, sep = '\t', quote = "")
+colnames(antisense) <- c('chr', 'start', 'end', 'ensembl', 'geneid', 'strand')
+row.names(antisense) <- antisense$ensembl
+head(antisense); dim(antisense)
+
+### expression matrix of lincRNA and antisense (lncRNA)
+lincRNA_exprs <- reads[row.names(reads) %in% row.names(lincRNA),]
+head(lincRNA_exprs); dim(lincRNA_exprs)
+
+antisense_exprs <- reads[row.names(reads) %in% row.names(antisense),]
+head(antisense_exprs); dim(antisense_exprs)
+
+
+
+# Make DESeq object and Do the normalization (size factor)
+## Create DESeqDataSet, change the count data (antisense or lincRNA)
+ddsFullCountTable <- DESeqDataSetFromMatrix(countData = lincRNA_exprs, colData = sample, design  = ~ celltype)
+
+## Calculation and Normalization: get normalized_counts
+dds <- DESeq(ddsFullCountTable)
+normalized_counts <- counts(dds, normalized= T)
+class(normalized_counts); head(normalized_counts)
+
+## Sort according to mad
+normalized_counts_mad <- apply(normalized_counts, 1, mad)
+normalized_counts < normalized_counts[order(normalized_counts_mad, decreasing = T),]
+## Log transformation
+rld <- rlog(dds, blind = F) # This step takes some time, we do not put '+1' here
+rlogMat <- assay(rld)
+rlogMat <- rlogMat[order(normalized_counts_mad, decreasing = T),]
+
+
+
+## Hierarchical clustering
+### Selecting colors
+display.brewer.all(type = 'all') 
+hmcol <- colorRampPalette(brewer.pal(9, "GnBu"))(100)
+### Calculating the pearson correlation matrix
+#### Clustering is based on the relationship among each individual sample. Both distance and correlation
+#### are accepted but correlation is preferred. The distance methods and correlation methods are chosen 
+#### based on your data.
+pearson_cor <- as.matrix(cor(rlogMat, method = 'pearson'))
+head(pearson_cor); dim(pearson_cor)
+hc <- hcluster(t(rlogMat), method="pearson")
+#### Here I use 'heatmap.2' function from 'gplots' package.
+heatmap.2(pearson_cor, Rowv = as.dendrogram(hc), trace = 'none',symm = T, col = hmcol, main = 'The pearson correlation of each')
+pheatmap(pearson_cor)
+
+
+
+#======================================================================================
+#             Beta-cell vs alpha-cell and Beta-cell vs delta-cell
+#======================================================================================
+
+################### Perform differential gene expression ################
+############### Differential Gene Expression #################
+sampleA <- 'beta'
+sampleB <- 'acinal'
+sampleC <- 'alpha'
+sampleD <- 'delta'
+
+
+### Differential gene expression between sampleA (beta-cell) and sampleC (alpha-cell)
+#### Comparison between sampleA and sampleC
+contrastV <- c('celltype', sampleA, sampleC)
+res <- results(dds, contrast = contrastV)
+head(res)
+
+
+#### Calculate the mean value of gene expression in sampleA 
+baseA <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleA]
+baseMeanA <- as.data.frame(rowMeans(baseA, na.rm = T))
+colnames(baseMeanA) <- sampleA
+
+
+#### Calculate the mean value of gene expression in sampleC 
+baseC <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleC]
+baseMeanC <- as.data.frame(rowMeans(baseC, na.rm = T))
+colnames(baseMeanC) <- sampleC
+
+#### Prepare the res table of differential gene expression between sampleA and sampleC
+res <- cbind(baseMeanA, baseMeanC, as.data.frame(res))
+ID <- rownames(res)
+res <- cbind(ID, as.data.frame(res))
+res$padj[is.na(res$padj)]<- 1
+res <- res[order(res$padj),]
+res$significance <- (res$padj<0.05)
+
+
+
+#### Extract differential expressed gene
+res_de <- subset(res, res$padj<0.1, select=c('ID',sampleA,sampleC,'log2FoldChange','padj'))
+res_de_up <- subset(res_de,res_de$log2FoldChange>=1)
+res_de_down <- subset(res_de,res_de$log2FoldChange<=-1)
+
+
+signifiant_genes_beta_vs_alpha <- row.names(subset(res, padj < 0.05 & res$log2FoldChange > 1 ))
+
+length(signifiant_genes_beta_vs_alpha)
+
+
+### Differential gene expression between sampleA (beta-cell) and sampleD (delta-cell)
+#### Comparison between sampleA and sampleD
+contrastV <- c('celltype', sampleA, sampleD)
+res <- results(dds, contrast = contrastV)
+head(res)
+
+
+#### Calculate the mean value of gene expression in sampleA 
+baseA <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleA]
+baseMeanA <- as.data.frame(rowMeans(baseA, na.rm = T))
+colnames(baseMeanA) <- sampleA
+
+
+#### Calculate the mean value of gene expression in sampleC 
+baseD <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleD]
+baseMeanD <- as.data.frame(rowMeans(baseD, na.rm = T))
+colnames(baseMeanD) <- sampleD
+
+#### Prepare the res table of differential gene expression between sampleA and sampleC
+res <- cbind(baseMeanA, baseMeanD, as.data.frame(res))
+ID <- rownames(res)
+res <- cbind(ID, as.data.frame(res))
+res$padj[is.na(res$padj)]<- 1
+res <- res[order(res$padj),]
+res$significance <- (res$padj<0.05)
+
+
+#### Extract differential expressed gene
+colnames(res)
+res_de <- subset(res, res$padj<0.1, select=c('ID',sampleA,sampleD,'log2FoldChange','padj'))
+res_de_up <- subset(res_de,res_de$log2FoldChange>=1)
+res_de_down <- subset(res_de,res_de$log2FoldChange<=-1)
+
+
+signifiant_genes_beta_vs_delta <- row.names(subset(res, padj < 0.05 & res$log2FoldChange > 1))
+
+length(signifiant_genes_beta_vs_delta)
+
+
+#### Pick up the lincRNAs that are differentially expressed in between beta-cell and alpha-cell and
+#### between beta-cell and delta-cell
+b <- signifiant_genes_beta_vs_delta[signifiant_genes_beta_vs_delta %in% signifiant_genes_beta_vs_alpha]
+length(b)
+
+coordinate_b_lincRNA <- lincRNA[lincRNA$ensembl %in% b,]
+coordinate_b_lincRNA
+
+coordinate_b_lincRNA$chr <- as.numeric(sub("chr","",coordinate_b_lincRNA$chr))
+
+
+library(biomaRt)
+library(clusterProfiler)
+readable = T
+mart <- useMart('ensembl')
+ensembl <- useDataset('drerio_gene_ensembl', mart) ## # select dataset "drerio_gene_ensembl"
+for (i in 1:nrow(coordinate_b_lincRNA)){
+  coordinate_b_lincRNA$flanking[i] <- getBM(attributes = 'entrezgene', filters = c('chromosome_name','start','end'),
+                                      values= list(coordinate_b_lincRNA$chr[i],coordinate_b_lincRNA$start[i]-200000,coordinate_b_lincRNA$end[i]+200000), 
+                                      mart=ensembl)
+}
+entrez <- as.vector(unlist(coordinate_b_lincRNA$flanking))
+GO <- enrichGO(entrez,'org.Dr.eg.db',pvalueCutoff = 0.2,
+               pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'BP', readable = readable)
+GO
+dotplot(GO)
+cnetplot(GO)
+
+#### integrate lincRNA and antisense lncRNA in beta cell
+coordinate_b <- rbind(coordinate_b_antisense, coordinate_b_lincRNA)
+head(coordinate_b); dim(coordinate_b)
+for (i in 1:nrow(coordinate_b)){
+  coordinate_b$flanking[i] <- getBM(attributes = 'entrezgene', filters = c('chromosome_name','start','end'),
+                                            values= list(coordinate_b$chr[i],coordinate_b$start[i]-500000,coordinate_b$end[i]+500000), 
+                                            mart=ensembl)
+}
+entrez <- as.vector(unlist(coordinate_b$flanking))
+GO <- enrichGO(entrez,'org.Dr.eg.db',pvalueCutoff = 0.2,
+               pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'BP', readable = readable)
+GO
+dotplot(GO)
+cnetplot(GO)
+
+################## Pick up the promoter regions ###################
+### Normally we define the promoter regions as 500 bp upstream of TSS. Because this is unstranded library, we need to check
+### the both ends. It is good to use 'dplyr' package here.
+library('dplyr')
+test_beta_coordinate <- coordinate_b
+promoter_left_strand <- mutate(.data = test_beta_coordinate, Start = start -100, End = start-90)[, c(1,8,9,5)]
+promoter_left_strand
+promoter_right_strand <- mutate(.data = test_beta_coordinate, Start = end + 90, End = end + 100 )[,c(1,8,9,5)]
+promoter_right_strand
+
+######
+####### ++/--
+####### 对正负链上5’和3’区域的序列进行标注
+####### Positive labelled, 5' region
+promoter_positiveLabel <- rbind(promoter_left_strand, promoter_right_strand)
+promoter_positiveLabel$strand <- rep('+', times = nrow(promoter_positiveLabel))
+promoter_positiveLabel$transcript_ID[1:nrow(promoter_left_strand)]<- paste0(promoter_left_strand$geneid,'-1')
+promoter_positiveLabel$transcript_ID[(nrow(promoter_left_strand)+1):nrow(promoter_positiveLabel)] <- paste0(promoter_left_strand$geneid,'-2')
+
+###### Negative labelled, 3' region
+promoter_negativeLabel <- rbind(promoter_left_strand, promoter_right_strand)
+promoter_negativeLabel$strand <- rep('-', times = nrow(promoter_negativeLabel))
+promoter_negativeLabel$transcript_ID[1:nrow(promoter_left_strand)]<- paste0(promoter_left_strand$geneid,'-3')
+promoter_negativeLabel$transcript_ID[(nrow(promoter_left_strand)+1):nrow(promoter_negativeLabel)] <- paste0(promoter_left_strand$geneid,'-4')
+
+###### Merge 5' region and 3' region
+promoter <- rbind(promoter_positiveLabel, promoter_negativeLabel)
+######
+
+
+promoter
+for (i in 1:nrow(promoter)){## here we found that the 'chr' does not have 'chr' label, we need to add it
+  promoter$Chr[i] <- paste0('chr',promoter$chr[i])
+}
+promoter <- data.frame(transcript_ID = promoter$transcript_ID, chr = promoter$Chr, start = promoter$Start, end = promoter$End, strand = promoter$strand) 
+head(promoter); dim(promoter)
+promoter; class(promoter)
+write.table(x = promoter, file = '/Users/mijiarui/biosoft/HOMER/results/new/promoter_significant_beta_vs_alphaDelta_knownLncRNA.txt', 
+            sep = '\t', row.names = F, col.names = F, quote = F)
+
+
+
+
+
+#======================================================================================
+#             alpha-cell vs beta-cell and alpha-cell vs delta-cell
+#======================================================================================
+
+### Differential gene expression between sampleC (alpha-cell) and sampleA (beta-cell)
+#### Comparison between sampleA and sampleC
+contrastV <- c('celltype', sampleC, sampleA)
+res <- results(dds, contrast = contrastV)
+head(res)
+
+
+#### Calculate the mean value of gene expression in sampleA 
+baseC <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleC]
+baseMeanC <- as.data.frame(rowMeans(baseC, na.rm = T))
+colnames(baseMeanC) <- sampleC
+
+
+#### Calculate the mean value of gene expression in sampleC 
+baseA <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleA]
+baseMeanA <- as.data.frame(rowMeans(baseA, na.rm = T))
+colnames(baseMeanA) <- sampleA
+
+#### Prepare the res table of differential gene expression between sampleA and sampleC
+res <- cbind(baseMeanC, baseMeanA, as.data.frame(res))
+ID <- rownames(res)
+res <- cbind(ID, as.data.frame(res))
+res$padj[is.na(res$padj)]<- 1
+res <- res[order(res$padj),]
+res$significance <- (res$padj<0.05)
+
+
+#### Extract differential expressed gene
+res_de <- subset(res, res$padj<0.1, select=c('ID',sampleC,sampleA,'log2FoldChange','padj'))
+res_de_up <- subset(res_de,res_de$log2FoldChange>=1)
+res_de_down <- subset(res_de,res_de$log2FoldChange<=-1)
+
+
+
+signifiant_genes_alpha_vs_beta <- row.names(subset(res, padj < 0.05 & res$log2FoldChange > 1))
+
+length(signifiant_genes_alpha_vs_beta)
+
+
+
+
+
+### Differential gene expression between sampleA (beta-cell) and sampleD (delta-cell)
+#### Comparison between sampleA and sampleD
+contrastV <- c('celltype', sampleC, sampleD)
+res <- results(dds, contrast = contrastV)
+head(res)
+
+
+#### Calculate the mean value of gene expression in sampleA 
+baseC <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleC]
+baseMeanC <- as.data.frame(rowMeans(baseC, na.rm = T))
+colnames(baseMeanC) <- sampleC
+
+
+#### Calculate the mean value of gene expression in sampleC 
+baseD <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleD]
+baseMeanD <- as.data.frame(rowMeans(baseD, na.rm = T))
+colnames(baseMeanD) <- sampleD
+
+#### Prepare the res table of differential gene expression between sampleA and sampleC
+res <- cbind(baseMeanC, baseMeanD, as.data.frame(res))
+ID <- rownames(res)
+res <- cbind(ID, as.data.frame(res))
+res$padj[is.na(res$padj)]<- 1
+res <- res[order(res$padj),]
+res$significance <- (res$padj<0.05)
+
+
+#### Extract differential expressed gene
+res_de <- subset(res, res$padj<0.1, select=c('ID',sampleC,sampleD,'log2FoldChange','padj'))
+res_de_up <- subset(res_de,res_de$log2FoldChange>=1)
+res_de_down <- subset(res_de,res_de$log2FoldChange<=-1)
+
+
+
+signifiant_genes_alpha_vs_delta <- row.names(subset(res, padj < 0.05 & res$log2FoldChange > 1 ))
+
+length(signifiant_genes_alpha_vs_delta)
+
+
+#### Pick up the lincRNAs that are differentially expressed in between beta-cell and alpha-cell and
+#### between beta-cell and delta-cell
+a <- signifiant_genes_alpha_vs_delta[signifiant_genes_alpha_vs_delta %in% signifiant_genes_alpha_vs_beta]
+length(a)
+
+coordinate_a_lincRNA <- lincRNA[lincRNA$ensembl %in% a,]
+coordinate_a_lincRNA
+
+
+coordinate_a_lincRNA$chr <- as.numeric(sub("chr","",coordinate_a_lincRNA$chr))
+
+
+library(biomaRt)
+library(clusterProfiler)
+readable = T
+mart <- useMart('ensembl')
+ensembl <- useDataset('drerio_gene_ensembl', mart) ## # select dataset "drerio_gene_ensembl"
+for (i in 1:nrow(coordinate_a_lincRNA)){
+  coordinate_a_lincRNA$flanking[i] <- getBM(attributes = 'entrezgene', filters = c('chromosome_name','start','end'),
+                                    values= list(coordinate_a_lincRNA$chr[i],coordinate_a_lincRNA$start[i]-1000000,coordinate_a_lincRNA$end[i]+1000000), 
+                                    mart=ensembl)
+}
+entrez <- as.vector(unlist(coordinate_a_lincRNA$flanking))
+GO <- enrichGO(entrez,'org.Dr.eg.db',pvalueCutoff = 0.2,
+               pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'BP', readable = readable)
+GO
+dotplot(GO)
+cnetplot(GO)
+
+#### Integrate lincRNA and antisense lncRNA in alpha-cell
+
+coordinate_a <- rbind(coordinate_a_antisense, coordinate_a_lincRNA)
+dim(coordinate_a)
+
+for (i in 1:nrow(coordinate_a)){
+  coordinate_a$flanking[i] <- getBM(attributes = 'entrezgene', filters = c('chromosome_name','start','end'),
+                                    values= list(coordinate_a$chr[i],coordinate_a$start[i]-1000000,coordinate_a$end[i]+1000000), 
+                                    mart=ensembl)
+}
+entrez <- as.vector(unlist(coordinate_a$flanking))
+GO <- enrichGO(entrez,'org.Dr.eg.db',pvalueCutoff = 0.2,
+               pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'BP', readable = readable)
+GO
+dotplot(GO)
+cnetplot(GO)
+
+################## Pick up the promoter regions ###################
+### Normally we define the promoter regions as 500 bp upstream of TSS. Because this is unstranded library, we need to check
+### the both ends. It is good to use 'dplyr' package here.
+library('dplyr')
+test_beta_coordinate <- coordinate_a
+promoter_left_strand <- mutate(.data = test_beta_coordinate, Start = start -100, End = start-90)[, c(1,8,9,5)]
+promoter_left_strand
+promoter_right_strand <- mutate(.data = test_beta_coordinate, Start = end + 90, End = end + 100 )[,c(1,8,9,5)]
+promoter_right_strand
+
+######
+####### ++/--
+####### 对正负链上5’和3’区域的序列进行标注
+####### Positive labelled, 5' region
+promoter_positiveLabel <- rbind(promoter_left_strand, promoter_right_strand)
+promoter_positiveLabel$strand <- rep('+', times = nrow(promoter_positiveLabel))
+promoter_positiveLabel$transcript_ID[1:nrow(promoter_left_strand)]<- paste0(promoter_left_strand$geneid,'-1')
+promoter_positiveLabel$transcript_ID[(nrow(promoter_left_strand)+1):nrow(promoter_positiveLabel)] <- paste0(promoter_left_strand$geneid,'-2')
+
+###### Negative labelled, 3' region
+promoter_negativeLabel <- rbind(promoter_left_strand, promoter_right_strand)
+promoter_negativeLabel$strand <- rep('-', times = nrow(promoter_negativeLabel))
+promoter_negativeLabel$transcript_ID[1:nrow(promoter_left_strand)]<- paste0(promoter_left_strand$geneid,'-3')
+promoter_negativeLabel$transcript_ID[(nrow(promoter_left_strand)+1):nrow(promoter_negativeLabel)] <- paste0(promoter_left_strand$geneid,'-4')
+
+###### Merge 5' region and 3' region
+promoter <- rbind(promoter_positiveLabel, promoter_negativeLabel)
+######
+
+
+promoter
+for (i in 1:nrow(promoter)){## here we found that the 'chr' does not have 'chr' label, we need to add it
+  promoter$Chr[i] <- paste0('chr',promoter$chr[i])
+}
+promoter <- data.frame(transcript_ID = promoter$transcript_ID, chr = promoter$Chr, start = promoter$Start, end = promoter$End, strand = promoter$strand) 
+head(promoter); dim(promoter)
+promoter; class(promoter)
+write.table(x = promoter, file = '/Users/mijiarui/biosoft/HOMER/results/new/promoter_significant_alpha_vs_betaDelta_knownLncRNA.txt', 
+            sep = '\t', row.names = F, col.names = F, quote = F)
+
+
+
+
+
+
+#======================================================================================
+#             delta-cell vs beta-cell and delta-cell vs alpha-cell
+#======================================================================================
+
+### Differential gene expression between sampleD (delta-cell) and sampleA (beta-cell)
+#### Comparison between sampleA and sampleC
+contrastV <- c('celltype', sampleD, sampleA)
+res <- results(dds, contrast = contrastV)
+head(res)
+
+
+#### Calculate the mean value of gene expression in sampleA 
+baseD <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleD]
+baseMeanD <- as.data.frame(rowMeans(baseD, na.rm = T))
+colnames(baseMeanD) <- sampleD
+
+
+#### Calculate the mean value of gene expression in sampleC 
+baseA <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleA]
+baseMeanA <- as.data.frame(rowMeans(baseA, na.rm = T))
+colnames(baseMeanA) <- sampleA
+
+#### Prepare the res table of differential gene expression between sampleA and sampleC
+res <- cbind(baseMeanD, baseMeanA, as.data.frame(res))
+ID <- rownames(res)
+res <- cbind(ID, as.data.frame(res))
+res$padj[is.na(res$padj)]<- 1
+res <- res[order(res$padj),]
+res$significance <- (res$padj<0.05)
+
+
+
+#### Extract differential expressed gene
+res_de <- subset(res, res$padj<0.1, select=c('ID',sampleD,sampleA,'log2FoldChange','padj'))
+res_de_up <- subset(res_de,res_de$log2FoldChange>=1)
+res_de_down <- subset(res_de,res_de$log2FoldChange<=-1)
+
+
+
+signifiant_genes_delta_vs_beta <- row.names(subset(res, padj < 0.05 & res$log2FoldChange > 1))
+
+length(signifiant_genes_delta_vs_beta)
+
+
+### Differential gene expression between sampleD (delta-cell) and sampleC (alpha-cell)
+#### Comparison between sampleA and sampleD
+contrastV <- c('celltype', sampleD, sampleC)
+res <- results(dds, contrast = contrastV)
+head(res)
+
+
+#### Calculate the mean value of gene expression in sampleC 
+baseD <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleD]
+baseMeanD <- as.data.frame(rowMeans(baseD, na.rm = T))
+colnames(baseMeanD) <- sampleD
+
+#### Calculate the mean value of gene expression in sampleA 
+baseC <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleC]
+baseMeanC <- as.data.frame(rowMeans(baseC, na.rm = T))
+colnames(baseMeanC) <- sampleC
+
+
+
+#### Prepare the res table of differential gene expression between sampleA and sampleC
+res <- cbind(baseMeanD, baseMeanC, as.data.frame(res))
+ID <- rownames(res)
+res <- cbind(ID, as.data.frame(res))
+res$padj[is.na(res$padj)]<- 1
+res <- res[order(res$padj),]
+res$significance <- (res$padj<0.05)
+
+
+
+
+
+#### Extract differential expressed gene
+res_de <- subset(res, res$padj<0.1, select=c('ID',sampleD,sampleC,'log2FoldChange','padj'))
+res_de_up <- subset(res_de,res_de$log2FoldChange>=1)
+res_de_down <- subset(res_de,res_de$log2FoldChange<=-1)
+
+
+
+signifiant_genes_delta_vs_alpha <- row.names(subset(res, padj < 0.05 & res$log2FoldChange > 1 ))
+
+length(signifiant_genes_delta_vs_alpha)
+
+
+#### Pick up the lincRNAs that are differentially expressed in between beta-cell and alpha-cell and
+#### between beta-cell and delta-cell
+d <- signifiant_genes_delta_vs_beta[signifiant_genes_delta_vs_beta %in% signifiant_genes_delta_vs_alpha]
+length(d)
+
+coordinate_d_lincRNA <- lincRNA[lincRNA$ensembl %in% d,]
+coordinate_d_lincRNA
+
+coordinate_d_lincRNA$chr <- as.numeric(sub("chr","",coordinate_d_lincRNA$chr))
+
+
+library(biomaRt)
+library(clusterProfiler)
+readable = T
+mart <- useMart('ensembl')
+ensembl <- useDataset('drerio_gene_ensembl', mart) ## # select dataset "drerio_gene_ensembl"
+for (i in 1:nrow(coordinate_d_lincRNA)){
+  coordinate_d_lincRNA$flanking[i] <- getBM(attributes = 'entrezgene', filters = c('chromosome_name','start','end'),
+                                    values= list(coordinate_d_lincRNA$chr[i],coordinate_d_lincRNA$start[i]-400000,coordinate_d_lincRNA$end[i]+400000), 
+                                    mart=ensembl)
+}
+entrez <- as.vector(unlist(coordinate_d_lincRNA$flanking))
+GO <- enrichGO(entrez,'org.Dr.eg.db',pvalueCutoff = 0.2,
+               pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'BP', readable = readable)
+GO
+dotplot(GO)
+cnetplot(GO)
+
+
+#### Integrate lincRNA and antisense lncRNA in delta-cell
+
+coordinate_d <- rbind(coordinate_a_antisense, coordinate_d_lincRNA)
+
+for (i in 1:nrow(coordinate_d)){
+  coordinate_d$flanking[i] <- getBM(attributes = 'entrezgene', filters = c('chromosome_name','start','end'),
+                                    values= list(coordinate_d$chr[i],coordinate_d$start[i]-1000000,coordinate_d$end[i]+1000000), 
+                                    mart=ensembl)
+}
+entrez <- as.vector(unlist(coordinate_d$flanking))
+GO <- enrichGO(entrez,'org.Dr.eg.db',pvalueCutoff = 0.2,
+               pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'BP', readable = readable)
+GO
+dotplot(GO)
+cnetplot(GO)
+
+
+################## Pick up the promoter regions ###################
+### Normally we define the promoter regions as 500 bp upstream of TSS. Because this is unstranded library, we need to check
+### the both ends. It is good to use 'dplyr' package here.
+library('dplyr')
+test_beta_coordinate <- coordinate_d
+promoter_left_strand <- mutate(.data = test_beta_coordinate, Start = start -100, End = start-90)[, c(1,8,9,5)]
+promoter_left_strand
+promoter_right_strand <- mutate(.data = test_beta_coordinate, Start = end + 90, End = end + 100 )[,c(1,8,9,5)]
+promoter_right_strand
+
+######
+####### ++/--
+####### 对正负链上5’和3’区域的序列进行标注
+####### Positive labelled, 5' region
+promoter_positiveLabel <- rbind(promoter_left_strand, promoter_right_strand)
+promoter_positiveLabel$strand <- rep('+', times = nrow(promoter_positiveLabel))
+promoter_positiveLabel$transcript_ID[1:nrow(promoter_left_strand)]<- paste0(promoter_left_strand$geneid,'-1')
+promoter_positiveLabel$transcript_ID[(nrow(promoter_left_strand)+1):nrow(promoter_positiveLabel)] <- paste0(promoter_left_strand$geneid,'-2')
+
+###### Negative labelled, 3' region
+promoter_negativeLabel <- rbind(promoter_left_strand, promoter_right_strand)
+promoter_negativeLabel$strand <- rep('-', times = nrow(promoter_negativeLabel))
+promoter_negativeLabel$transcript_ID[1:nrow(promoter_left_strand)]<- paste0(promoter_left_strand$geneid,'-3')
+promoter_negativeLabel$transcript_ID[(nrow(promoter_left_strand)+1):nrow(promoter_negativeLabel)] <- paste0(promoter_left_strand$geneid,'-4')
+
+###### Merge 5' region and 3' region
+promoter <- rbind(promoter_positiveLabel, promoter_negativeLabel)
+######
+
+
+promoter
+for (i in 1:nrow(promoter)){## here we found that the 'chr' does not have 'chr' label, we need to add it
+  promoter$Chr[i] <- paste0('chr',promoter$chr[i])
+}
+promoter <- data.frame(transcript_ID = promoter$transcript_ID, chr = promoter$Chr, start = promoter$Start, end = promoter$End, strand = promoter$strand) 
+head(promoter); dim(promoter)
+promoter; class(promoter)
+write.table(x = promoter, file = '/Users/mijiarui/biosoft/HOMER/results/new/promoter_significant_delta_vs_alphaBeta_knownLncRNA.txt', 
+            sep = '\t', row.names = F, col.names = F, quote = F)
+
+
+
+
+
+#### heatmap containing differentially expressed lincRNA and antisense lncRNA
+abd_ensembl <- c(a,b,d)
+abd_coordinate <- rbind(coordinate_a, coordinate_b, coordinate_d)
+
+pheatmap(rlogMat[rownames(rlogMat) %in% abd_ensembl,], color = colorRampPalette(c('navy', 'white', 'firebrick3'))(50), 
+         cluster_rows = T, scale = 'row', cluster_cols = T, annotation_col = sample)
+
+abd_coordinate$chr <- as.numeric(sub("chr","",abd_coordinate$chr))
+
+library(biomaRt)
+library(clusterProfiler)
+readable = T
+mart <- useMart('ensembl')
+ensembl <- useDataset('drerio_gene_ensembl', mart) ## # select dataset "drerio_gene_ensembl"
+for (i in 1:nrow(abd_coordinate)){
+  abd_coordinate$flanking[i] <- getBM(attributes = 'entrezgene', filters = c('chromosome_name','start','end'),
+                                    values= list(abd_coordinate$chr[i],abd_coordinate$start[i]-1000000,abd_coordinate$end[i]+1000000), 
+                                    mart=ensembl)
+}
+entrez <- as.vector(unlist(abd_coordinate$flanking))
+GO <- enrichGO(entrez,'org.Dr.eg.db',pvalueCutoff = 0.2,
+               pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'BP', readable = readable)
+GO
+dotplot(GO)
+cnetplot(GO)
+
+
+#===================================================================================================
+#
+#                          Differential expressed annotated lincRNA
+#
+#===================================================================================================
+
+# Make DESeq object and Do the normalization (size factor)
+## Create DESeqDataSet
+ddsFullCountTable <- DESeqDataSetFromMatrix(countData = lincRNA_exprs, colData = sample, design  = ~ celltype)
+
+## Calculation and Normalization: get normalized_counts
+dds <- DESeq(ddsFullCountTable)
+normalized_counts <- counts(dds, normalized= T)
+class(normalized_counts); head(normalized_counts)
+
+## Sort according to mad
+normalized_counts_mad <- apply(normalized_counts, 1, mad)
+normalized_counts < normalized_counts[order(normalized_counts_mad, decreasing = T),]
+## Log transformation
+rld <- rlog(dds, blind = F) # This step takes some time, we do not put '+1' here
+rlogMat <- assay(rld)
+rlogMat <- rlogMat[order(normalized_counts_mad, decreasing = T),]
+
+
+#======================================================================================
+#             alpha-cell vs beta-cell and delta-cell vs beta-cell
+#======================================================================================
+
+################### Perform differential gene expression ################
+############### Differential Gene Expression #################
+sampleA <- 'beta'
+sampleB <- 'acinal'
+sampleC <- 'alpha'
+sampleD <- 'delta'
+
+### Differential gene expression between sampleC (alpha-cell) and sampleA (beta-cell)
+#### Comparison between sampleA and sampleC
+contrastV <- c('celltype', sampleC, sampleA)
+res <- results(dds, contrast = contrastV)
+head(res)
+
+
+#### Calculate the mean value of gene expression in sampleA 
+baseC <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleC]
+baseMeanC <- as.data.frame(rowMeans(baseC, na.rm = T))
+colnames(baseMeanC) <- sampleC
+
+
+#### Calculate the mean value of gene expression in sampleC 
+baseA <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleA]
+baseMeanA <- as.data.frame(rowMeans(baseA, na.rm = T))
+colnames(baseMeanA) <- sampleA
+
+#### Prepare the res table of differential gene expression between sampleA and sampleC
+res <- cbind(baseMeanC, baseMeanA, as.data.frame(res))
+ID <- rownames(res)
+res <- cbind(ID, as.data.frame(res))
+res$padj[is.na(res$padj)]<- 1
+res <- res[order(res$padj),]
+res$significance <- (res$padj<0.05)
+
+
+#### Extract differential expressed gene
+res_de <- subset(res, res$padj<0.1, select=c('ID',sampleC,sampleA,'log2FoldChange','padj'))
+res_de_up <- subset(res_de,res_de$log2FoldChange>=1)
+res_de_down <- subset(res_de,res_de$log2FoldChange<=-1)
+
+
+
+signifiant_genes_alpha_vs_beta <- row.names(subset(res, padj < 0.01 & res$log2FoldChange > 2))
+
+length(signifiant_genes_alpha_vs_beta)
+
+
+### Differential gene expression between sampleD (delta-cell) and sampleA (beta-cell)
+#### Comparison between sampleA and sampleC
+contrastV <- c('celltype', sampleD, sampleA)
+res <- results(dds, contrast = contrastV)
+head(res)
+
+
+#### Calculate the mean value of gene expression in sampleA 
+baseD <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleD]
+baseMeanD <- as.data.frame(rowMeans(baseD, na.rm = T))
+colnames(baseMeanD) <- sampleD
+
+
+#### Calculate the mean value of gene expression in sampleC 
+baseA <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleA]
+baseMeanA <- as.data.frame(rowMeans(baseA, na.rm = T))
+colnames(baseMeanA) <- sampleA
+
+#### Prepare the res table of differential gene expression between sampleA and sampleC
+res <- cbind(baseMeanD, baseMeanA, as.data.frame(res))
+ID <- rownames(res)
+res <- cbind(ID, as.data.frame(res))
+res$padj[is.na(res$padj)]<- 1
+res <- res[order(res$padj),]
+res$significance <- (res$padj<0.05)
+
+
+
+#### Extract differential expressed gene
+res_de <- subset(res, res$padj<0.1, select=c('ID',sampleD,sampleA,'log2FoldChange','padj'))
+res_de_up <- subset(res_de,res_de$log2FoldChange>=1)
+res_de_down <- subset(res_de,res_de$log2FoldChange<=-1)
+
+
+
+signifiant_genes_delta_vs_beta <- row.names(subset(res, padj < 0.01 & res$log2FoldChange > 1))
+
+length(signifiant_genes_delta_vs_beta)
+
+
+
+b <- signifiant_genes_alpha_vs_beta[signifiant_genes_alpha_vs_beta %in% signifiant_genes_delta_vs_beta]
+length(b)
+
+coordinate_b <- lincRNA[lincRNA$ensembl %in% b,]
+coordinate_b
+
+coordinate_b$chr <- as.numeric(sub("chr","",coordinate_b$chr))
+
+
+library(biomaRt)
+library(clusterProfiler)
+readable = T
+mart <- useMart('ensembl')
+ensembl <- useDataset('drerio_gene_ensembl', mart) ## # select dataset "drerio_gene_ensembl"
+for (i in 1:nrow(coordinate_b)){
+  coordinate_b$flanking[i] <- getBM(attributes = 'entrezgene', filters = c('chromosome_name','start','end'),
+                                    values= list(coordinate_b$chr[i],coordinate_b$start[i]-10000,coordinate_b$end[i]+10000), 
+                                    mart=ensembl)
+}
+entrez <- as.vector(unlist(coordinate_b$flanking))
+GO <- enrichGO(entrez,'org.Dr.eg.db',pvalueCutoff = 0.2,
+               pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'BP', readable = readable)
+GO
+dotplot(GO)
+cnetplot(GO)
+
+
+#======================================================================================
+#             beta-cell vs alpha-cell and delta-cell vs alpha-cell
+#======================================================================================
+
+### Differential gene expression between sampleA (beta-cell) and sampleC (alpha-cell)
+#### Comparison between sampleA and sampleC
+contrastV <- c('celltype', sampleA, sampleC)
+res <- results(dds, contrast = contrastV)
+head(res)
+
+
+#### Calculate the mean value of gene expression in sampleA 
+baseA <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleA]
+baseMeanA <- as.data.frame(rowMeans(baseA, na.rm = T))
+colnames(baseMeanA) <- sampleA
+
+
+#### Calculate the mean value of gene expression in sampleC 
+baseC <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleC]
+baseMeanC <- as.data.frame(rowMeans(baseC, na.rm = T))
+colnames(baseMeanC) <- sampleC
+
+#### Prepare the res table of differential gene expression between sampleA and sampleC
+res <- cbind(baseMeanA, baseMeanC, as.data.frame(res))
+ID <- rownames(res)
+res <- cbind(ID, as.data.frame(res))
+res$padj[is.na(res$padj)]<- 1
+res <- res[order(res$padj),]
+res$significance <- (res$padj<0.05)
+
+
+
+#### Extract differential expressed gene
+res_de <- subset(res, res$padj<0.1, select=c('ID',sampleA,sampleC,'log2FoldChange','padj'))
+res_de_up <- subset(res_de,res_de$log2FoldChange>=1)
+res_de_down <- subset(res_de,res_de$log2FoldChange<=-1)
+
+
+signifiant_genes_beta_vs_alpha <- row.names(subset(res, padj < 0.01 & res$log2FoldChange > 1 ))
+
+length(signifiant_genes_beta_vs_alpha)
+
+
+
+### Differential gene expression between sampleD (delta-cell) and sampleC (alpha-cell)
+#### Comparison between sampleA and sampleD
+contrastV <- c('celltype', sampleD, sampleC)
+res <- results(dds, contrast = contrastV)
+head(res)
+
+
+#### Calculate the mean value of gene expression in sampleC 
+baseD <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleD]
+baseMeanD <- as.data.frame(rowMeans(baseD, na.rm = T))
+colnames(baseMeanD) <- sampleD
+
+#### Calculate the mean value of gene expression in sampleA 
+baseC <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleC]
+baseMeanC <- as.data.frame(rowMeans(baseC, na.rm = T))
+colnames(baseMeanC) <- sampleC
+
+
+
+#### Prepare the res table of differential gene expression between sampleA and sampleC
+res <- cbind(baseMeanD, baseMeanC, as.data.frame(res))
+ID <- rownames(res)
+res <- cbind(ID, as.data.frame(res))
+res$padj[is.na(res$padj)]<- 1
+res <- res[order(res$padj),]
+res$significance <- (res$padj<0.05)
+
+
+
+
+
+#### Extract differential expressed gene
+res_de <- subset(res, res$padj<0.1, select=c('ID',sampleD,sampleC,'log2FoldChange','padj'))
+res_de_up <- subset(res_de,res_de$log2FoldChange>=1)
+res_de_down <- subset(res_de,res_de$log2FoldChange<=-1)
+
+
+
+signifiant_genes_delta_vs_alpha <- row.names(subset(res, padj < 0.01 & res$log2FoldChange > 1 ))
+
+length(signifiant_genes_delta_vs_alpha)
+
+
+#### Pick up the lincRNAs that are differentially expressed in between beta-cell and alpha-cell and
+#### between beta-cell and delta-cell
+a <- signifiant_genes_beta_vs_alpha[signifiant_genes_beta_vs_alpha %in% signifiant_genes_delta_vs_alpha]
+length(a)
+
+coordinate_a <- lincRNA[lincRNA$ensembl %in% a,]
+coordinate_a
+
+
+coordinate_a$chr <- as.numeric(sub("chr","",coordinate_a$chr))
+
+
+library(biomaRt)
+library(clusterProfiler)
+readable = T
+mart <- useMart('ensembl')
+ensembl <- useDataset('drerio_gene_ensembl', mart) ## # select dataset "drerio_gene_ensembl"
+for (i in 1:nrow(coordinate_a)){
+  coordinate_a$flanking[i] <- getBM(attributes = 'entrezgene', filters = c('chromosome_name','start','end'),
+                                    values= list(coordinate_a$chr[i],coordinate_a$start[i]-10000,coordinate_a$end[i]+10000), 
+                                    mart=ensembl)
+}
+entrez <- as.vector(unlist(coordinate_a$flanking))
+GO <- enrichGO(entrez,'org.Dr.eg.db',pvalueCutoff = 0.2,
+               pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'BP', readable = readable)
+GO
+dotplot(GO)
+cnetplot(GO)
+
+
+
+
+#======================================================================================
+#             alpha-cell vs delta-cell and beta-cell vs delta-cell
+#======================================================================================
+
+### Differential gene expression between sampleA (beta-cell) and sampleD (delta-cell)
+#### Comparison between sampleA and sampleD
+contrastV <- c('celltype', sampleC, sampleD)
+res <- results(dds, contrast = contrastV)
+head(res)
+
+
+#### Calculate the mean value of gene expression in sampleA 
+baseC <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleC]
+baseMeanC <- as.data.frame(rowMeans(baseC, na.rm = T))
+colnames(baseMeanC) <- sampleC
+
+
+#### Calculate the mean value of gene expression in sampleC 
+baseD <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleD]
+baseMeanD <- as.data.frame(rowMeans(baseD, na.rm = T))
+colnames(baseMeanD) <- sampleD
+
+#### Prepare the res table of differential gene expression between sampleA and sampleC
+res <- cbind(baseMeanC, baseMeanD, as.data.frame(res))
+ID <- rownames(res)
+res <- cbind(ID, as.data.frame(res))
+res$padj[is.na(res$padj)]<- 1
+res <- res[order(res$padj),]
+res$significance <- (res$padj<0.05)
+
+
+#### Extract differential expressed gene
+res_de <- subset(res, res$padj<0.1, select=c('ID',sampleC,sampleD,'log2FoldChange','padj'))
+res_de_up <- subset(res_de,res_de$log2FoldChange>=1)
+res_de_down <- subset(res_de,res_de$log2FoldChange<=-1)
+
+
+
+signifiant_genes_alpha_vs_delta <- row.names(subset(res, padj < 0.01 & res$log2FoldChange > 2 ))
+
+length(signifiant_genes_alpha_vs_delta)
+
+
+### Differential gene expression between sampleA (beta-cell) and sampleD (delta-cell)
+#### Comparison between sampleA and sampleD
+contrastV <- c('celltype', sampleA, sampleD)
+res <- results(dds, contrast = contrastV)
+head(res)
+
+
+#### Calculate the mean value of gene expression in sampleA 
+baseA <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleA]
+baseMeanA <- as.data.frame(rowMeans(baseA, na.rm = T))
+colnames(baseMeanA) <- sampleA
+
+
+#### Calculate the mean value of gene expression in sampleC 
+baseD <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleD]
+baseMeanD <- as.data.frame(rowMeans(baseD, na.rm = T))
+colnames(baseMeanD) <- sampleD
+
+#### Prepare the res table of differential gene expression between sampleA and sampleC
+res <- cbind(baseMeanA, baseMeanD, as.data.frame(res))
+ID <- rownames(res)
+res <- cbind(ID, as.data.frame(res))
+res$padj[is.na(res$padj)]<- 1
+res <- res[order(res$padj),]
+res$significance <- (res$padj<0.05)
+
+
+#### Extract differential expressed gene
+colnames(res)
+res_de <- subset(res, res$padj<0.1, select=c('ID',sampleA,sampleD,'log2FoldChange','padj'))
+res_de_up <- subset(res_de,res_de$log2FoldChange>=1)
+res_de_down <- subset(res_de,res_de$log2FoldChange<=-1)
+
+
+signifiant_genes_beta_vs_delta <- row.names(subset(res, padj < 0.01 & res$log2FoldChange > 1))
+
+length(signifiant_genes_beta_vs_delta)
+
+
+#### Pick up the lincRNAs that are differentially expressed in between beta-cell and alpha-cell and
+#### between beta-cell and delta-cell
+b <- signifiant_genes_alpha_vs_delta[signifiant_genes_alpha_vs_delta %in% signifiant_genes_beta_vs_delta]
+length(b)
+
+coordinate_b <- lincRNA[lincRNA$ensembl %in% b,]
+coordinate_b
+
+coordinate_b$chr <- as.numeric(sub("chr","",coordinate_b$chr))
+
+
+library(biomaRt)
+library(clusterProfiler)
+readable = T
+mart <- useMart('ensembl')
+ensembl <- useDataset('drerio_gene_ensembl', mart) ## # select dataset "drerio_gene_ensembl"
+for (i in 1:nrow(coordinate_b)){
+  coordinate_b$flanking[i] <- getBM(attributes = 'entrezgene', filters = c('chromosome_name','start','end'),
+                                    values= list(coordinate_b$chr[i],coordinate_b$start[i]-100000,coordinate_b$end[i]+100000), 
+                                    mart=ensembl)
+}
+entrez <- as.vector(unlist(coordinate_b$flanking))
+GO <- enrichGO(entrez,'org.Dr.eg.db',pvalueCutoff = 0.2,
+               pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'BP', readable = readable)
+GO
+dotplot(GO)
+cnetplot(GO)
+
+
+
+
+
+
+
+
+
