@@ -3575,7 +3575,7 @@ coordinate_antisense <- antisense[antisense$ensembl %in% signifiant_genes_endocr
 coordinate_antisense
 
 
-coordinate_antisense$chr <- as.numeric(sub("chr","",coordinate_b_antisense$chr))
+coordinate_antisense$chr <- as.numeric(sub("chr","",coordinate_antisense$chr))
 
 
 library(biomaRt)
@@ -3585,16 +3585,19 @@ mart <- useMart('ensembl')
 ensembl <- useDataset('drerio_gene_ensembl', mart) ## # select dataset "drerio_gene_ensembl"
 for (i in 1:nrow(coordinate_antisense)){
   coordinate_antisense$flanking[i] <- getBM(attributes = 'entrezgene', filters = c('chromosome_name','start','end'),
-                                              values= list(coordinate_antisense$chr[i],coordinate_antisense$start[i]-200000,coordinate_antisense$end[i]+200000), 
+                                              values= list(coordinate_antisense$chr[i],coordinate_antisense$start[i]-500000,coordinate_antisense$end[i]+500000), 
                                               mart=ensembl)
 }
-entrez <- as.vector(unlist(coordinate_b_antisense$flanking))
+entrez <- as.vector(unlist(coordinate_antisense$flanking))
 GO <- enrichGO(entrez,'org.Dr.eg.db',pvalueCutoff = 0.2,
                pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'BP', readable = readable)
 GO
 dotplot(GO)
 cnetplot(GO)
 
+pa <- enrichPathway(entrez,organism = 'zebrafish',pvalueCutoff = 0.05 ,pAdjustMethod = 'BH',qvalueCutoff = 0.2, readable = T)
+summary(pa)
+barplot(pa)
 
 kk <- enrichKEGG(entrez,organism = 'dre',keyType = 'kegg',pvalueCutoff = 0.05,pAdjustMethod = 'BH',qvalueCutoff = 0.2)
 result_kk <- setReadable(kk,'org.Dr.eg.db',keytype = 'ENTREZID')
@@ -3607,6 +3610,99 @@ endocrine_highly_exprs_var <- apply(endocrine_highly_exprs[,2:15], 1, var)
 endocrine_highly_exprs1 <- endocrine_highly_exprs[order(endocrine_highly_exprs_var, decreasing = T),]
 pheatmap(endocrine_highly_exprs1, color = colorRampPalette(c('navy', 'white', 'firebrick3'))(50), 
          cluster_rows = T, scale = 'row', cluster_cols = T, annotation_col = sample)
+
+
+#======================================================================================
+#                          exocrine higher than endocrine
+#======================================================================================
+
+################### Perform differential gene expression ################
+############### Differential Gene Expression #################
+sampleA <- 'exocrine'
+sampleC <- 'endocrine'
+
+
+
+### Differential gene expression between sampleA (beta-cell) and sampleC (alpha-cell)
+#### Comparison between sampleA and sampleC
+contrastV <- c('celltype', sampleA, sampleC)
+res <- results(dds, contrast = contrastV)
+head(res)
+
+
+#### Calculate the mean value of gene expression in sampleA 
+baseA <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleA]
+baseMeanA <- as.data.frame(rowMeans(baseA, na.rm = T))
+colnames(baseMeanA) <- sampleA
+
+
+#### Calculate the mean value of gene expression in sampleC 
+baseC <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleC]
+baseMeanC <- as.data.frame(rowMeans(baseC, na.rm = T))
+colnames(baseMeanC) <- sampleC
+
+#### Prepare the res table of differential gene expression between sampleA and sampleC
+res <- cbind(baseMeanA, baseMeanC, as.data.frame(res))
+ID <- rownames(res)
+res <- cbind(ID, as.data.frame(res))
+res$padj[is.na(res$padj)]<- 1
+res <- res[order(res$padj),]
+res$significance <- (res$padj<0.05)
+
+
+
+#### Extract differential expressed gene
+res_de <- subset(res, res$padj<0.1, select=c('ID',sampleA,sampleC,'log2FoldChange','padj'))
+res_de_up <- subset(res_de,res_de$log2FoldChange>=1)
+res_de_down <- subset(res_de,res_de$log2FoldChange<=-1)
+
+
+signifiant_genes_exocrine_vs_endocrine <- row.names(subset(res, padj < 0.05 & res$log2FoldChange > 1 ))
+
+length(signifiant_genes_exocrine_vs_endocrine)
+
+
+coordinate_antisense <- antisense[antisense$ensembl %in% signifiant_genes_exocrine_vs_endocrine,]
+coordinate_antisense
+
+
+coordinate_antisense$chr <- as.numeric(sub("chr","",coordinate_antisense$chr))
+
+
+library(biomaRt)
+library(clusterProfiler)
+readable = T
+mart <- useMart('ensembl')
+ensembl <- useDataset('drerio_gene_ensembl', mart) ## # select dataset "drerio_gene_ensembl"
+for (i in 1:nrow(coordinate_antisense)){
+  coordinate_antisense$flanking[i] <- getBM(attributes = 'entrezgene', filters = c('chromosome_name','start','end'),
+                                            values= list(coordinate_antisense$chr[i],coordinate_antisense$start[i]-500000,coordinate_antisense$end[i]+500000), 
+                                            mart=ensembl)
+}
+entrez <- as.vector(unlist(coordinate_antisense$flanking))
+GO <- enrichGO(entrez,'org.Dr.eg.db',pvalueCutoff = 0.2,
+               pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'BP', readable = readable)
+GO
+dotplot(GO)
+cnetplot(GO)
+
+pa <- enrichPathway(entrez,organism = 'zebrafish',pvalueCutoff = 0.05 ,pAdjustMethod = 'BH',qvalueCutoff = 0.2, readable = T)
+summary(pa)
+barplot(pa)
+
+kk <- enrichKEGG(entrez,organism = 'dre',keyType = 'kegg',pvalueCutoff = 0.05,pAdjustMethod = 'BH',qvalueCutoff = 0.2)
+result_kk <- setReadable(kk,'org.Dr.eg.db',keytype = 'ENTREZID')
+dotplot(result_kk)+scale_size(range = c(2,15))+ggplot2::xlim(NA,0.09)
+cnetplot(result_kk,categorySize = 'aa$geneNum', showCategory = 3)
+
+exocrine_highly_exprs <- rlogMat[rownames(rlogMat) %in% signifiant_genes_exocrine_vs_endocrine,]
+dim(exocrine_highly_exprs)
+exocrine_highly_exprs_var <- apply(exocrine_highly_exprs[,2:15], 1, var)
+exocrine_highly_exprs1 <- endocrine_highly_exprs[order(exocrine_highly_exprs_var, decreasing = T),]
+pheatmap(exocrine_highly_exprs1, color = colorRampPalette(c('navy', 'white', 'firebrick3'))(50), 
+         cluster_rows = T, scale = 'row', cluster_cols = T, annotation_col = sample)
+
+
 
 
 
@@ -3737,16 +3833,16 @@ library(clusterProfiler)
 readable = T
 mart <- useMart('ensembl')
 ensembl <- useDataset('drerio_gene_ensembl', mart) ## # select dataset "drerio_gene_ensembl"
-for (i in 1:nrow(coordinate_b_antisense)){
+for (i in 1:nrow(coordinate_lincRNA)){
   coordinate_lincRNA$flanking[i] <- getBM(attributes = 'entrezgene', filters = c('chromosome_name','start','end'),
-                                              values= list(coordinate_lincRNA$chr[i],coordinate_lincRNA$start[i]-200000,coordinate_lincRNA$end[i]+200000), 
+                                              values= list(coordinate_lincRNA$chr[i],coordinate_lincRNA$start[i]-500000,coordinate_lincRNA$end[i]+500000), 
                                               mart=ensembl)
 }
-entrez <- as.vector(unlist(coordinate_b_antisense$flanking))
+entrez <- as.vector(unlist(coordinate_lincRNA$flanking))
 GO <- enrichGO(entrez,'org.Dr.eg.db',pvalueCutoff = 0.2,
                pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'BP', readable = readable)
 GO
-dotplot(GO)
+barplot(GO)
 cnetplot(GO)
 
 
@@ -3755,9 +3851,111 @@ result_kk <- setReadable(kk,'org.Dr.eg.db',keytype = 'ENTREZID')
 dotplot(result_kk)+scale_size(range = c(2,15))+ggplot2::xlim(NA,0.09)
 cnetplot(result_kk,categorySize = 'aa$geneNum', showCategory = 3)
 
+
+pa <- enrichPathway(entrez,organism = 'zebrafish',pvalueCutoff = 0.05 ,pAdjustMethod = 'BH',qvalueCutoff = 0.2, readable = T)
+summary(pa)
+barplot(pa)
+
+
+
 endocrine_highly_exprs <- rlogMat[rownames(rlogMat) %in% signifiant_genes_endocrine_vs_exocrine,]
 dim(endocrine_highly_exprs)
 endocrine_highly_exprs_var <- apply(endocrine_highly_exprs[,2:15], 1, var)
 endocrine_highly_exprs1 <- endocrine_highly_exprs[order(endocrine_highly_exprs_var, decreasing = T),]
 pheatmap(endocrine_highly_exprs1, color = colorRampPalette(c('navy', 'white', 'firebrick3'))(50), 
          cluster_rows = T, scale = 'row', cluster_cols = T, annotation_col = sample)
+
+
+
+#======================================================================================
+#                          exocrine higher than endocrine
+#======================================================================================
+
+################### Perform differential gene expression ################
+############### Differential Gene Expression #################
+sampleA <- 'exocrine'
+sampleC <- 'endocrine'
+
+
+
+### Differential gene expression between sampleA (beta-cell) and sampleC (alpha-cell)
+#### Comparison between sampleA and sampleC
+contrastV <- c('celltype', sampleA, sampleC)
+res <- results(dds, contrast = contrastV)
+head(res)
+
+
+#### Calculate the mean value of gene expression in sampleA 
+baseA <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleA]
+baseMeanA <- as.data.frame(rowMeans(baseA, na.rm = T))
+colnames(baseMeanA) <- sampleA
+
+
+#### Calculate the mean value of gene expression in sampleC 
+baseC <- counts(dds, normalized = T)[,colData(dds)$celltype==sampleC]
+baseMeanC <- as.data.frame(rowMeans(baseC, na.rm = T))
+colnames(baseMeanC) <- sampleC
+
+#### Prepare the res table of differential gene expression between sampleA and sampleC
+res <- cbind(baseMeanA, baseMeanC, as.data.frame(res))
+ID <- rownames(res)
+res <- cbind(ID, as.data.frame(res))
+res$padj[is.na(res$padj)]<- 1
+res <- res[order(res$padj),]
+res$significance <- (res$padj<0.05)
+
+
+
+#### Extract differential expressed gene
+res_de <- subset(res, res$padj<0.1, select=c('ID',sampleA,sampleC,'log2FoldChange','padj'))
+res_de_up <- subset(res_de,res_de$log2FoldChange>=1)
+res_de_down <- subset(res_de,res_de$log2FoldChange<=-1)
+
+
+signifiant_genes_exocrine_vs_endocrine <- row.names(subset(res, padj < 0.05 & res$log2FoldChange > 1 ))
+
+length(signifiant_genes_exocrine_vs_endocrine)
+
+
+coordinate_lincRNA <- lincRNA[lincRNA$ensembl %in% signifiant_genes_exocrine_vs_endocrine,]
+coordinate_lincRNA
+
+
+coordinate_lincRNA$chr <- as.numeric(sub("chr","",coordinate_lincRNA$chr))
+
+
+library(biomaRt)
+library(clusterProfiler)
+readable = T
+mart <- useMart('ensembl')
+ensembl <- useDataset('drerio_gene_ensembl', mart) ## # select dataset "drerio_gene_ensembl"
+for (i in 1:nrow(coordinate_lincRNA)){
+  coordinate_lincRNA$flanking[i] <- getBM(attributes = 'entrezgene', filters = c('chromosome_name','start','end'),
+                                            values= list(coordinate_lincRNA$chr[i],coordinate_lincRNA$start[i]-200000,coordinate_lincRNA$end[i]+200000), 
+                                            mart=ensembl)
+}
+entrez <- as.vector(unlist(coordinate_lincRNA$flanking))
+GO <- enrichGO(entrez,'org.Dr.eg.db',pvalueCutoff = 0.2,
+               pAdjustMethod = 'BH',qvalueCutoff = 0.2,ont = 'BP', readable = readable)
+GO
+dotplot(GO)
+cnetplot(GO)
+
+pa <- enrichPathway(entrez,organism = 'zebrafish',pvalueCutoff = 0.05 ,pAdjustMethod = 'BH',qvalueCutoff = 0.2, readable = T)
+summary(pa)
+barplot(pa)
+cnetplot(pa)
+
+kk <- enrichKEGG(entrez,organism = 'dre',keyType = 'kegg',pvalueCutoff = 0.05,pAdjustMethod = 'BH',qvalueCutoff = 0.2)
+result_kk <- setReadable(kk,'org.Dr.eg.db',keytype = 'ENTREZID')
+dotplot(result_kk)+scale_size(range = c(2,15))+ggplot2::xlim(NA,0.09)
+cnetplot(result_kk,categorySize = 'aa$geneNum', showCategory = 3)
+
+exocrine_highly_exprs <- rlogMat[rownames(rlogMat) %in% signifiant_genes_exocrine_vs_endocrine,]
+dim(exocrine_highly_exprs)
+exocrine_highly_exprs_var <- apply(exocrine_highly_exprs[,c(1,16:23)], 1, var)
+exocrine_highly_exprs1 <- exocrine_highly_exprs[order(exocrine_highly_exprs_var, decreasing = T),]
+pheatmap(exocrine_highly_exprs1, color = colorRampPalette(c('navy', 'white', 'firebrick3'))(50), 
+         cluster_rows = T, scale = 'row', cluster_cols = T, annotation_col = sample)
+
+
