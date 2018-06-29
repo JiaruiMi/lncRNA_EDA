@@ -458,6 +458,17 @@ rld <- rlog(dds, blind = F) # This step takes some time, we do not put '+1' here
 rlogMat <- assay(rld)
 rlogMat <- rlogMat[order(normalized_counts_mad, decreasing = T),]
 
+### check one gene expression profiles across different samples types, take yap1 "ENSDARG00000068401" as an example
+singleGeneExprs <- as.vector(as.matrix(rlogMat[row.names(rlogMat) == "ENSDARG00000036456",]))
+singleGeneSample <- as.vector(as.matrix(sample[,1]))
+singleGeneTable <- data.frame(exprs = singleGeneExprs, cellType = singleGeneSample)
+p <- ggplot(data = singleGeneTable, aes(x = cellType, y = exprs, fill = cellType)) + 
+     geom_boxplot() + geom_point() + theme_bw(base_size = 10) +  
+     labs(title = "anxa4 expression across different cell types", x = 'cell type', y = 'Mean of Normalized counts (log2-transformed)') + 
+     theme(axis.title = element_text(size = 18), axis.text = element_text(size = 16)) + 
+     theme(plot.title = element_text(hjust = 0.5, size = 22))
+p
+
 ### After Size factor normalization and log transformation, we can check the expression matrix again and compare the 
 ### sequencing depth among different samples
 exprSet_L <- row.names(rlogMat)    
@@ -3573,7 +3584,7 @@ length(signifiant_genes_endocrine_vs_exocrine)
 
 coordinate_antisense <- antisense[antisense$ensembl %in% signifiant_genes_endocrine_vs_exocrine,]
 coordinate_antisense
-
+dim(coordinate_antisense)
 
 coordinate_antisense$chr <- as.numeric(sub("chr","",coordinate_antisense$chr))
 
@@ -3598,19 +3609,23 @@ cnetplot(GO)
 pa <- enrichPathway(entrez,organism = 'zebrafish',pvalueCutoff = 0.05 ,pAdjustMethod = 'BH',qvalueCutoff = 0.2, readable = T)
 summary(pa)
 barplot(pa)
+cnetplot(pa)
 
 kk <- enrichKEGG(entrez,organism = 'dre',keyType = 'kegg',pvalueCutoff = 0.05,pAdjustMethod = 'BH',qvalueCutoff = 0.2)
 result_kk <- setReadable(kk,'org.Dr.eg.db',keytype = 'ENTREZID')
 dotplot(result_kk)+scale_size(range = c(2,15))+ggplot2::xlim(NA,0.09)
 cnetplot(result_kk,categorySize = 'aa$geneNum', showCategory = 3)
 
-endocrine_highly_exprs <- rlogMat[rownames(rlogMat) %in% signifiant_genes_endocrine_vs_exocrine,]
+endocrine_highly_exprs <- rlogMat[rownames(rlogMat) %in% row.names(coordinate_antisense),]
 dim(endocrine_highly_exprs)
 endocrine_highly_exprs_var <- apply(endocrine_highly_exprs[,2:15], 1, var)
 endocrine_highly_exprs1 <- endocrine_highly_exprs[order(endocrine_highly_exprs_var, decreasing = T),]
 pheatmap(endocrine_highly_exprs1, color = colorRampPalette(c('navy', 'white', 'firebrick3'))(50), 
          cluster_rows = T, scale = 'row', cluster_cols = T, annotation_col = sample)
 
+### add the flanking genes will alter the structure of the table, therefore, we redo the 赋值 step
+coordinate_antisense <- antisense[antisense$ensembl %in% signifiant_genes_endocrine_vs_exocrine,]
+write.table(x = coordinate_antisense, file = 'coordinate_antisense_endocrine_higherThan_exocrine.txt', sep = '\t', quote = F)
 
 #======================================================================================
 #                          exocrine higher than endocrine
@@ -3664,10 +3679,11 @@ length(signifiant_genes_exocrine_vs_endocrine)
 
 coordinate_antisense <- antisense[antisense$ensembl %in% signifiant_genes_exocrine_vs_endocrine,]
 coordinate_antisense
+dim(coordinate_antisense)
 
 
 coordinate_antisense$chr <- as.numeric(sub("chr","",coordinate_antisense$chr))
-
+write.table(x = coordinate_antisense, file = 'coordinate_antisense_exocrine_higherThan_endocrine.txt', quote = F)
 
 library(biomaRt)
 library(clusterProfiler)
@@ -3823,7 +3839,7 @@ length(signifiant_genes_endocrine_vs_exocrine)
 
 coordinate_lincRNA <- lincRNA[lincRNA$ensembl %in% signifiant_genes_endocrine_vs_exocrine,]
 coordinate_lincRNA
-
+dim(coordinate_lincRNA)
 
 coordinate_lincRNA$chr <- as.numeric(sub("chr","",coordinate_lincRNA$chr))
 
@@ -3855,16 +3871,20 @@ cnetplot(result_kk,categorySize = 'aa$geneNum', showCategory = 3)
 pa <- enrichPathway(entrez,organism = 'zebrafish',pvalueCutoff = 0.05 ,pAdjustMethod = 'BH',qvalueCutoff = 0.2, readable = T)
 summary(pa)
 barplot(pa)
+cnetplot(pa)
 
 
-
-endocrine_highly_exprs <- rlogMat[rownames(rlogMat) %in% signifiant_genes_endocrine_vs_exocrine,]
+endocrine_highly_exprs <- rlogMat[rownames(rlogMat) %in% row.names(coordinate_lincRNA),]
 dim(endocrine_highly_exprs)
 endocrine_highly_exprs_var <- apply(endocrine_highly_exprs[,2:15], 1, var)
 endocrine_highly_exprs1 <- endocrine_highly_exprs[order(endocrine_highly_exprs_var, decreasing = T),]
 pheatmap(endocrine_highly_exprs1, color = colorRampPalette(c('navy', 'white', 'firebrick3'))(50), 
          cluster_rows = T, scale = 'row', cluster_cols = T, annotation_col = sample)
 
+
+### add the flanking genes will alter the structure of the table, therefore, we redo the 赋值 step
+coordinate_lincRNA <- lincRNA[lincRNA$ensembl %in% signifiant_genes_endocrine_vs_exocrine,]
+write.table(x = coordinate_lincRNA, file = 'coordinate_lincRNA_endocrine_higherThan_exocrine.txt', sep = '\t', quote = F)
 
 
 #======================================================================================
@@ -3919,10 +3939,10 @@ length(signifiant_genes_exocrine_vs_endocrine)
 
 coordinate_lincRNA <- lincRNA[lincRNA$ensembl %in% signifiant_genes_exocrine_vs_endocrine,]
 coordinate_lincRNA
-
+dim(coordinate_lincRNA)
 
 coordinate_lincRNA$chr <- as.numeric(sub("chr","",coordinate_lincRNA$chr))
-
+write.table(x = coordinate_lincRNA, file = 'coordinate_lincRNA_exocrine_higherThan_endocrine.txt', quote = F)
 
 library(biomaRt)
 library(clusterProfiler)
